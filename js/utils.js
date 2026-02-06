@@ -72,6 +72,7 @@
       cardColor: sanitizeCardColor(node.cardColor),
       birthDate: sanitizeIsoDate(node.birthDate),
       deathDate: sanitizeIsoDate(node.deathDate),
+      devSigned: !!node.devSigned,
       children: Array.isArray(node.children) ? node.children.map(normalizeTree).filter(Boolean) : []
     };
     return out;
@@ -96,20 +97,33 @@
 
   function sanitizeIsoDate(v){
     const s = String(v || "").trim();
-    return isValidIsoDate(s) ? s : "";
+    if(isValidIsoDate(s)) return s;
+    if(/^\d+$/.test(s)) return s;
+    return "";
   }
 
   function validateDates(birthDate, deathDate){
     const b = String(birthDate || "").trim();
     const d = String(deathDate || "").trim();
 
-    if(b && !isValidIsoDate(b)) return "صيغة تاريخ الولادة غير صحيحة";
-    if(d && !isValidIsoDate(d)) return "صيغة تاريخ الوفاة غير صحيحة";
+    const bIso = b && isValidIsoDate(b);
+    const dIso = d && isValidIsoDate(d);
+    const bNum = b && /^\d+$/.test(b);
+    const dNum = d && /^\d+$/.test(d);
+
+    if(b && !(bIso || bNum)) return "صيغة تاريخ الولادة غير صحيحة";
+    if(d && !(dIso || dNum)) return "صيغة تاريخ الوفاة غير صحيحة";
 
     if(b && d){
-      const bd = new Date(b + "T00:00:00");
-      const dd = new Date(d + "T00:00:00");
-      if(dd.getTime() < bd.getTime()) return "تاريخ الوفاة يجب أن يكون بعد تاريخ الولادة";
+      if(bIso && dIso){
+        const bd = new Date(b + "T00:00:00");
+        const dd = new Date(d + "T00:00:00");
+        if(dd.getTime() < bd.getTime()) return "تاريخ الوفاة يجب أن يكون بعد تاريخ الولادة";
+      }else if(bNum && dNum){
+        const bn = Number(b);
+        const dn = Number(d);
+        if(dn < bn) return "تاريخ الوفاة يجب أن يكون بعد تاريخ الولادة";
+      }
     }
     return "";
   }
@@ -125,8 +139,11 @@
   }
 
   function yearOf(iso){
-    if(!isValidIsoDate(iso)) return "";
-    return String(iso).slice(0,4);
+    const s = String(iso || "").trim();
+    if(!s) return "";
+    if(isValidIsoDate(s)) return s.slice(0,4);
+    if(/^\d+$/.test(s)) return s;
+    return "";
   }
 
   function compactYears(birthDate, deathDate){
@@ -139,12 +156,15 @@
   }
 
   function formatDateAr(iso){
-    if(!isValidIsoDate(iso)) return "";
+    const s = String(iso || "").trim();
+    if(!s) return "";
+    if(/^\d+$/.test(s)) return s;
+    if(!isValidIsoDate(s)) return "";
     try{
-      const d = new Date(iso + "T00:00:00");
+      const d = new Date(s + "T00:00:00");
       return new Intl.DateTimeFormat("ar-IQ", { year:"numeric", month:"long", day:"numeric" }).format(d);
     }catch{
-      return iso;
+      return s;
     }
   }
 
@@ -278,6 +298,76 @@
     });
   }
 
+
+// --- بحث عربي ذكي: تطبيع وإزالة تشكيل وتمديد ---
+// يهدف لتحسين البحث: لا يتأثر بالتشكيل (الحركات) أو الكشيدة (ـ) أو اختلاف أشكال الهمزة/التاء المربوطة.
+function normalizeArabic(str){
+  let s = String(str || '');
+
+  // إزالة التمديد (الكشيدة)
+  s = s.replace(/ـ/g, '');
+
+  // إزالة التشكيل وعلامات الضبط
+  s = s.replace(/[ؐ-ًؚ-ٰٟۖ-ۭ]/g, '');
+
+  // توحيد أشكال الحروف الشائعة
+  s = s.replace(/[أإآٱ]/g, 'ا');
+  s = s.replace(/ؤ/g, 'و');
+  s = s.replace(/ئ/g, 'ي');
+  s = s.replace(/ى/g, 'ي');
+  s = s.replace(/ة/g, 'ه');
+  s = s.replace(/ء/g, '');
+
+  // تحويل الأرقام العربية-الهندية إلى 0-9
+  const map = { '٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9' };
+  s = s.replace(/[٠-٩]/g, (d) => map[d] || d);
+
+  // إزالة علامات الترقيم والرموز (اترك الحروف/الأرقام/المسافات)
+  s = s.replace(/[^0-9A-Za-z؀-ۿ\s]/g, ' ');
+
+  // توحيد المسافات
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+// Stem خفيف (ليس صرف عربي كامل): يفيد في تجاهل "الـ" وبعض اللواحق الشائعة
+function lightStemArabic(token){
+  let t = String(token || '').trim();
+  if(!t) return '';
+
+  // Prefixes
+  if(t.length > 5 && t.startsWith('وال')) t = t.slice(3);
+  else if(t.length > 5 && t.startsWith('بال')) t = t.slice(3);
+  else if(t.length > 5 && t.startsWith('كال')) t = t.slice(3);
+  else if(t.length > 5 && t.startsWith('فال')) t = t.slice(3);
+  else if(t.length > 4 && t.startsWith('لل')) t = t.slice(2);
+
+  if(t.length > 4 && t.startsWith('ال')) t = t.slice(2);
+
+  // حرف عطف/جر واحد (و/ف/ب/ك/ل)
+  if(t.length > 3 && /^[وفبكل]/.test(t)) t = t.slice(1);
+
+  // Suffixes (الأطول أولاً)
+  const suffixes = ['كما','كم','كن','هما','هم','هن','ها','نا','ات','ون','ين','ان','ه','ي','ك'];
+  for(const suf of suffixes){
+    if(t.length > (suf.length + 2) && t.endsWith(suf)){
+      t = t.slice(0, -suf.length);
+      break;
+    }
+  }
+
+  // إزالة هاء التأنيث في نهاية الكلمة (بعد تطبيع ة->ه)
+  if(t.length > 3 && t.endsWith('ه')) t = t.slice(0, -1);
+
+  return t;
+}
+
+function tokenizeArabic(str){
+  const norm = normalizeArabic(str);
+  if(!norm) return [];
+  return norm.split(/\s+/).map(lightStemArabic).filter(Boolean);
+}
+
   function downloadJson(filename, dataObj){
     const blob = new Blob([JSON.stringify(dataObj, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -299,6 +389,7 @@
     cardColorClass,
     compactYears,
     formatLifeDates,
+    normalizeArabic, lightStemArabic, tokenizeArabic,
     downloadJson
   };
 })();

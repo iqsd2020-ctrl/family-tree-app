@@ -3,11 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>شجرة العائلة</title>
+  <meta name="theme-color" content="#143d22" />
+  <title>شجرة السادة اليعقوبيين</title>
 
   <!-- خطوط عربية مميزة -->
   <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Aref+Ruqaa:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 </head>
 <body>
 
@@ -19,18 +25,37 @@
       </div>
 
       <div class="header-title">
-        <h1>شجرة العائلة</h1>
-        <div class="subtitle"><span>تصميم متجاوب ودقيق</span><span class="subtitle-sep">•</span><span id="syncStatus" class="sync-badge">...</span></div>
+        <h1>شجرة السادة اليعقوبيين</h1>
       </div>
 
       <div class="header-actions left">
-        <button class="hdr-btn" id="btnCenterRoot" title="توسيط الجذر">◎</button>
+        <button class="hdr-btn" id="btnInstall" title="تثبيت التطبيق" aria-label="تثبيت التطبيق" style="display:none">📲</button>
       </div>
     </div>
+
+<div class="header-search" id="headerSearch">
+  <div class="search-box" role="search">
+    <span class="search-icon" aria-hidden="true">🔎</span>
+    <input id="hdrSearchInput" class="search-input" type="search" placeholder="بحث ذكي: اكتب الاسم أو اللقب..." autocomplete="off" />
+    <button id="hdrSearchClear" class="search-clear" title="مسح" aria-label="مسح" type="button">×</button>
+  </div>
+  <div id="hdrSearchResults" class="search-results" role="listbox" aria-label="نتائج البحث"></div>
+</div>
+
   </header>
 
   <!-- منطقة عرض الشجرة -->
   <div class="viewport" id="viewport">
+
+    <!-- مؤشر تحميل البيانات -->
+    <div class="loading-overlay" id="loadingOverlay" role="status" aria-live="polite">
+      <div class="loading-card">
+        <div class="loading-title">جاري تحميل البيانات...</div>
+        <div class="loading-bar"></div>
+        <div class="loading-sub">يرجى الانتظار</div>
+      </div>
+    </div>
+
     <div class="pan-zoom-container" id="container">
       <div class="tree">
         <ul id="treeRoot"></ul>
@@ -47,7 +72,7 @@
 
   <!-- زر إضافة سريع -->
   <div class="controls controls-right">
-    <button class="ctrl-btn admin-only" id="btnAddRootChild" title="إضافة ابن/ابنة للجذر">＋</button>
+    <button class="ctrl-btn editor-only" id="btnAddRootChild" title="إضافة ابن/ابنة للجذر">＋</button>
   </div>
 
   <!-- نافذة التفاصيل (Modal) -->
@@ -65,9 +90,11 @@
         <p id="mDesc">الوصف</p>
 
         <div class="modal-actions">
-          <button class="action-btn admin-only" id="btnAddChild">إضافة ابن/ابنة</button>
-          <button class="action-btn admin-only" id="btnEditPerson">تعديل</button>
-          <button class="action-btn danger admin-only" id="btnDeletePerson">حذف</button>
+          <button class="action-btn editor-only" id="btnAddChild">إضافة ابن/ابنة</button>
+          <button class="action-btn editor-only" id="btnAddParentRoot">إضافة والد الجذر</button>
+          <button class="action-btn editor-only" id="btnEditPerson">تعديل</button>
+          <button class="action-btn admin-only" id="btnDevSign">توقيع المطور</button>
+          <button class="action-btn danger editor-only" id="btnDeletePerson">حذف</button>
           <button class="action-btn ghost" id="btnCenterPerson">توسيط على الشخص</button>
         </div>
       </div>
@@ -119,17 +146,49 @@
 
         <div class="form-row">
           <label class="form-label">تاريخ الولادة</label>
-          <input class="form-input" id="fBirthDate" type="date" />
+          <input class="form-input" id="fBirthDate" type="text" inputmode="numeric" />
         </div>
 
         <div class="form-row">
           <label class="form-label">تاريخ الوفاة</label>
-          <input class="form-input" id="fDeathDate" type="date" />
+          <input class="form-input" id="fDeathDate" type="text" inputmode="numeric" />
         </div>
 
         <div class="form-actions">
           <button class="action-btn" id="btnSavePerson">حفظ</button>
           <button class="action-btn ghost" id="btnCancelForm">إلغاء</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة قصّ الصورة -->
+  <div class="modal-overlay" id="modalCrop" aria-hidden="true">
+    <div class="modal-card crop-card" role="dialog" aria-modal="true" aria-labelledby="cropTitle">
+      <div class="modal-header">
+        <h2 id="cropTitle" style="margin:0; font-family:'Aref Ruqaa'">قصّ الصورة</h2>
+      </div>
+      <div class="modal-body form-body">
+        <div class="crop-wrap">
+          <div class="crop-frame" id="cropFrame">
+            <img id="cropImg" alt="قصّ الصورة" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">التكبير</label>
+          <input class="form-input" id="cropZoom" type="range" min="1" max="3" step="0.01" value="1" />
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">الحجم النهائي</label>
+          <input class="form-input" id="cropSize" type="range" min="160" max="420" step="20" value="240" />
+          <div class="hint" id="cropSizeHint">240×240</div>
+        </div>
+
+        <div class="form-actions">
+          <button class="action-btn" id="btnCropApply">اعتماد</button>
+          <button class="action-btn ghost" id="btnCropCancel">إلغاء</button>
         </div>
       </div>
     </div>
@@ -170,7 +229,27 @@
     </div>
   </div>
 
+<!-- نافذة تثبيت التطبيق -->
+  <div class="modal-overlay" id="modalInstall" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="installTitle">
+      <div class="modal-header">
+        <h2 id="installTitle" style="margin:0; font-family:'Aref Ruqaa'">تثبيت التطبيق</h2>
+      </div>
+      <div class="modal-body" style="text-align:center">
+        <div style="font-size:2.2rem; margin-bottom:10px">📲</div>
+        <div style="margin-bottom:14px">
+          يمكنك تثبيت التطبيق للحصول على تجربة أسرع وإمكانية العمل دون اتصال.
+        </div>
 
+        <button class="action-btn" id="btnInstallConfirm" type="button">تثبيت الآن</button>
+        <button class="modal-btn" id="btnInstallClose" type="button" style="margin-top:10px">ليس الآن</button>
+
+        <div class="hint" id="installIosHint" style="margin-top:12px; display:none; text-align:center">
+          على iPhone/iPad: اضغط زر المشاركة ثم اختر "إضافة إلى الشاشة الرئيسية".
+        </div>
+      </div>
+    </div>
+  </div>
   <!-- نافذة تسجيل الدخول / الحساب -->
   <div class="modal-overlay" id="modalAuth" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="aTitle">
@@ -205,5 +284,6 @@
   <script src="js/utils.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/pwa.js"></script>
 </body>
 </html>

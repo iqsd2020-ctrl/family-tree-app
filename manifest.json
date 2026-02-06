@@ -1,0 +1,27 @@
+{
+  "name": "اليعقوبيين",
+  "short_name": "شجرة السادة",
+  "description": "شجرة السادة اليعقوبيين الموسويين",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#fcfaf2",
+  "theme_color": "#143d22",
+  "dir": "rtl",
+  "lang": "ar",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -8,6 +8,7 @@
   const C = window.FTConfig || {};
   const ADMIN_EMAILS = Array.isArray(C.ADMIN_EMAILS) ? C.ADMIN_EMAILS.map(e => String(e||"").toLowerCase()) : [];
   const PUBLIC_TREE_ID = String(C.PUBLIC_TREE_ID || "main");
+  const DEV_EMAIL = String(C.DEVELOPER_EMAIL || "").toLowerCase();
   const AUTO_SIGNOUT_NON_ADMIN = (C.AUTO_SIGNOUT_NON_ADMIN !== false);
 
   // --- DOM ---
@@ -70,6 +71,8 @@
   let _auth = null;
   let _user = null;
   let _isAdmin = false;
+  let _isEditor = false;
+  let _isDeveloper = false;
 
   // listeners
   const _listeners = [];
@@ -84,6 +87,7 @@
 
   function applyAdminMode(){
     document.body.classList.toggle("is-admin", !!_isAdmin);
+    document.body.classList.toggle("is-editor", !!_isEditor);
 
     // إعداد الشجرة العامة دائماً
     try{
@@ -106,8 +110,10 @@
 
     if(_user && _isAdmin){
       setHint("تم تسجيل الدخول كمطور. أدوات الإدارة مفعّلة.");
+    }else if(_user){
+      setHint("تم تسجيل الدخول. أدوات التحرير مفعّلة.");
     }else{
-      setHint("تسجيل الدخول مخصص للمطور لإدارة الشجرة. الزائر يمكنه المشاهدة فقط.");
+      setHint("سجّل الدخول عبر Google للتحرير. الزائر يمكنه المشاهدة فقط.");
     }
   }
 
@@ -132,7 +138,7 @@
     // في compat SDK: Persistence.NONE يعني عدم حفظ الجلسة في LocalStorage/SessionStorage.
     try{
       if(_auth.setPersistence && firebase.auth && firebase.auth.Auth && firebase.auth.Auth.Persistence){
-        _auth.setPersistence(firebase.auth.Auth.Persistence.NONE).catch(()=>{});
+        _auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
       }
     }catch(_e){}
 
@@ -143,14 +149,8 @@
       setError("");
       _user = u || null;
       _isAdmin = isAdminUser(_user);
-
-      // إن كان المستخدم غير مخوّل: سجّل خروجه تلقائياً
-      if(_user && !_isAdmin && AUTO_SIGNOUT_NON_ADMIN){
-        try{ await _auth.signOut(); }catch{}
-        _user = null;
-        _isAdmin = false;
-        setError("هذا الحساب غير مخوّل لإدارة الشجرة.");
-      }
+      _isEditor = !!_user;
+      _isDeveloper = !!(_user && String(_user.email || "").toLowerCase() === DEV_EMAIL);
 
       applyAdminMode();
       emit();
@@ -207,6 +207,8 @@
   window.FTAuth = {
     get user(){ return _user; },
     get isAdmin(){ return _isAdmin; },
+    get isEditor(){ return _isEditor; },
+    get isDeveloper(){ return _isDeveloper; },
     waitForAuth: () => _ready,
     onAuthChanged: (cb) => { if(typeof cb === "function") _listeners.push(cb); },
   };

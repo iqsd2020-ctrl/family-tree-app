@@ -56,6 +56,7 @@
   let _savePromise = null;
   let _saveResolve = null;
   let _saveReject = null;
+  let _saveInFlight = Promise.resolve();
 
   function init(){
     if(_inited) return;
@@ -157,6 +158,7 @@
         cardColor: p.cardColor ? String(p.cardColor) : "default",
         birthDate: p.birthDate ? String(p.birthDate) : "",
         deathDate: p.deathDate ? String(p.deathDate) : "",
+        devSigned: !!p.devSigned,
         parentId: parentId ? String(parentId) : "",
         orderIndex: Number.isFinite(orderIndex) ? orderIndex : 0,
       });
@@ -194,6 +196,7 @@
         cardColor: d.cardColor || "default",
         birthDate: d.birthDate || "",
         deathDate: d.deathDate || "",
+        devSigned: !!d.devSigned,
         photo: (photo && photo.mime && photo.base64) ? makeDataUrl(photo.mime, photo.base64) : "",
         children: [],
         // مؤقت للترتيب
@@ -418,23 +421,32 @@
     }
 
     if(_saveTimer) clearTimeout(_saveTimer);
-    _saveTimer = setTimeout(async () => {
-      const payload = _savePending;
-      _savePending = null;
+    _saveTimer = setTimeout(() => {
       _saveTimer = null;
 
-      try{
-        await _saveNowFirestore(payload);
-        if(_saveResolve) _saveResolve(true);
-      }catch(err){
-        console.error("Firestore save failed", err);
-        if(_saveReject) _saveReject(err);
-      }finally{
-        _savePromise = null;
-        _saveResolve = null;
-        _saveReject = null;
-      }
-    }, 650);
+      const flush = async () => {
+        try{
+          while(_savePending){
+            const payload = _savePending;
+            _savePending = null;
+
+            let stable = payload;
+            try{ stable = JSON.parse(JSON.stringify(payload)); }catch(_e){}
+            await _saveNowFirestore(stable);
+          }
+          if(_saveResolve) _saveResolve(true);
+        }catch(err){
+          console.error("Firestore save failed", err);
+          if(_saveReject) _saveReject(err);
+        }finally{
+          _savePromise = null;
+          _saveResolve = null;
+          _saveReject = null;
+        }
+      };
+
+      _saveInFlight = _saveInFlight.then(flush, flush);
+    }, 0);
 
     return _savePromise;
   }
@@ -466,6 +478,7 @@
 
     let mainSnap = null;
     let filesSnap = null;
+    let filesRev = 0;
 
     function emit(){
       try{
@@ -485,7 +498,7 @@
         const meta = {
           exists: true,
           fromCache: !!(mainSnap.metadata && mainSnap.metadata.fromCache),
-          clientUpdatedAt: Number(main.clientUpdatedAt || 0) || 0,
+          clientUpdatedAt: (Number(main.clientUpdatedAt || 0) || 0) * 1000 + filesRev,
           updatedAt: main.updatedAt || null,
           treeId: _treeId
         };
@@ -539,7 +552,7 @@
       else console.error(err);
     });
 
-    const unsubFiles = filesRef.onSnapshot((s) => { filesSnap = s; emit(); }, (err) => {
+    const unsubFiles = filesRef.onSnapshot((s) => { filesRev++; filesSnap = s; emit(); }, (err) => {
       if(typeof onError === "function") onError(err);
       else console.error(err);
     });
