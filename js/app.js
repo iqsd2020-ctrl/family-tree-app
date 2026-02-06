@@ -421,12 +421,12 @@ let searchDebounce = null;
         p.then(() => setSync("تم الحفظ"))
          .catch((err) => {
            console.error(err);
-           setSync("تعذر الحفظ");
+           setSync(err && err.localSaved ? "تم الحفظ محليًا" : "تعذر الحفظ");
          });
       }
     }catch(err){
       console.error(err);
-      setSync("تعذر الحفظ");
+      setSync(err && err.localSaved ? "تم الحفظ محليًا" : "تعذر الحفظ");
     }
   }
 

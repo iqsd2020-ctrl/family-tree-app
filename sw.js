@@ -1,5 +1,5 @@
 /* Service Worker - شجرة السادة اليعقوبيين */
-const CACHE_NAME = 'family-tree-app-cache-v1';
+const CACHE_NAME = 'family-tree-app-cache-v4';
 
 const PRECACHE_URLS = [
   './',
@@ -16,7 +16,8 @@ const PRECACHE_URLS = [
   './js/pwa.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/apple-touch-icon.png'
+  './icons/apple-touch-icon.png',
+  './sjad.svg'
 ];
 
 // مصادر خارجية (اختياري) - لا نفشل التثبيت إذا تعذر تحميلها

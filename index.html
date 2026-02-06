@@ -36,7 +36,7 @@
 <div class="header-search" id="headerSearch">
   <div class="search-box" role="search">
     <span class="search-icon" aria-hidden="true">🔎</span>
-    <input id="hdrSearchInput" class="search-input" type="search" placeholder="بحث ذكي: اكتب الاسم أو اللقب..." autocomplete="off" />
+    <input id="hdrSearchInput" class="search-input" type="search" placeholder="اكتب الاسم الثلاثي..." autocomplete="off" />
     <button id="hdrSearchClear" class="search-clear" title="مسح" aria-label="مسح" type="button">×</button>
   </div>
   <div id="hdrSearchResults" class="search-results" role="listbox" aria-label="نتائج البحث"></div>
@@ -127,7 +127,7 @@
         <div class="form-row">
           <label class="form-label">الصورة المصغّرة</label>
           <input class="form-input" id="fPhoto" type="file" accept="image/*" />
-          <div class="hint" id="photoHint">سيتم ضغط الصورة تلقائياً ثم حفظها في Firestore كنص Base64 داخل <b>وثيقة صورة مستقلة</b> مرتبطة بهذا الشخص. لا يوجد أي حفظ محلي في المتصفح.</div>
+          <div class="hint" id="photoHint">سيتم ضغط الصورة تلقائياً ثم حفظها في Firestore كنص Base64 داخل <b>وثيقة صورة مستقلة</b> مرتبطة بهذا الشخص. وفي حال تعذر الحفظ سيتم الاحتفاظ بنسخة محلية على هذا الجهاز.</div>
           <div class="preview-wrap">
             <img id="fPhotoPreview" class="preview" alt="معاينة الصورة" />
           </div>
