@@ -496,7 +496,7 @@
 
   btnExport.addEventListener("click", () => {
     if(!requireAdmin()) return;
-    const payload = U.deepClone(state);
+    const payload = (S && S.exportPayload) ? S.exportPayload(state) : U.deepClone(state);
     const filename = `family-tree-${new Date().toISOString().slice(0,10)}.json`;
     U.downloadJson(filename, payload);
   });
@@ -509,14 +509,19 @@
     try{
       const text = await file.text();
       const raw = JSON.parse(text);
-      const normalized = U.normalizeTree(raw);
+      const imported = (S && S.importPayload) ? S.importPayload(raw) : raw;
+      const normalized = U.normalizeTree(imported);
       if(!normalized || !normalized.id) throw new Error("ملف غير صالح");
+
+      // حسب المتطلبات: عند استيراد JSON من المطور يجب حذف الوثائق السابقة بالكامل
+      try{ await clear(); }catch(_e){}
+
       state = normalized;
       selectedId = state.id;
       render(true);
       closeModal(modalManage);
       requestAnimationFrame(resetView);
-      alert("تم الاستيراد بنجاح");
+      alert("تم الاستيراد بنجاح. سيتم بناء الوثائق الجديدة على Firestore.");
     }catch(err){
       alert("فشل الاستيراد: " + (err.message || "خطأ غير معروف"));
     }finally{
@@ -538,7 +543,7 @@
   });
 
   btnAbout.addEventListener("click", () => {
-    alert("تطبيق شجرة العائلة يعمل داخل المتصفح مع حفظ البيانات على Firestore.\n\n- إضافة/تعديل/حذف أفراد\n- ضغط تلقائي للصور ثم حفظها كـ Base64 (كملف في Firestore)\n- تمييز لون البطاقة (ألوان محددة)\n- تواريخ الولادة والوفاة\n- حفظ ومزامنة تلقائية");
+    alert("تطبيق شجرة العائلة يعمل داخل المتصفح مع حفظ البيانات على Firestore (بدون أي حفظ محلي).\n\n- قراءة عامة للزوار\n- تعديل/إدارة للمطور فقط\n- كل شخص وثيقة مستقلة داخل Firestore\n- الصور تُضغط تلقائياً ثم تُحفظ كنص Base64 في وثيقة صورة مرتبطة بالشخص\n- مزامنة لحظية");
   });
 
   // --- تأكيد ---

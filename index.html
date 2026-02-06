@@ -100,7 +100,7 @@
         <div class="form-row">
           <label class="form-label">الصورة المصغّرة</label>
           <input class="form-input" id="fPhoto" type="file" accept="image/*" />
-          <div class="hint" id="photoHint">سيتم حفظ الصورة في Firestore كملف Base64 (وليس كصورة). سيتم ضغطها تلقائياً لتكون صغيرة.</div>
+          <div class="hint" id="photoHint">سيتم ضغط الصورة تلقائياً ثم حفظها في Firestore كنص Base64 داخل <b>وثيقة صورة مستقلة</b> مرتبطة بهذا الشخص. لا يوجد أي حفظ محلي في المتصفح.</div>
           <div class="preview-wrap">
             <img id="fPhotoPreview" class="preview" alt="معاينة الصورة" />
           </div>

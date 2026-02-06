@@ -51,6 +51,10 @@
   function humanFirebaseError(err){
     const code = (err && (err.code || err.message)) ? String(err.code || err.message) : "";
     if(code.includes("auth/popup-closed-by-user")) return "تم إغلاق نافذة تسجيل الدخول";
+    if(code.includes("auth/popup-blocked")) return "تم حظر النافذة المنبثقة. جرّب السماح بالنوافذ المنبثقة أو سيتم استخدام التحويل (Redirect).";
+    if(code.includes("auth/cancelled-popup-request")) return "تم إلغاء طلب النافذة المنبثقة. جرّب مرة أخرى.";
+    if(code.includes("auth/unauthorized-domain")) return "هذا النطاق غير مصرح به. أضف الدومين إلى Authorized domains داخل Firebase Authentication.";
+    if(code.includes("auth/operation-not-supported-in-this-environment")) return "بيئة المتصفح الحالية لا تدعم تسجيل الدخول بالطريقة المختارة. جرّب تشغيل الموقع عبر https أو localhost.";
     if(code.includes("auth/operation-not-allowed")) return "مزود تسجيل الدخول غير مفعّل في Firebase";
     if(code.includes("auth/network-request-failed")) return "تعذر الاتصال بالشبكة";
     return "تعذر تسجيل الدخول";
@@ -108,8 +112,13 @@
   }
 
   function initAuth(){
+    // تأكد أن Firebase App تم تهيئته قبل استخدام Auth
+    // (كان يحدث خطأ "No Firebase App" ثم تصبح _auth = null وبالتالي تظهر رسالة "Firebase Auth غير متاح")
+    try{ if(S && S.getApp) S.getApp(); }catch(_e){}
+
     try{
-      if(window.firebase && firebase.auth) _auth = firebase.auth();
+      if(S && S.getAuth) _auth = S.getAuth();
+      else if(window.firebase && firebase.auth) _auth = firebase.auth();
     }catch(_e){}
 
     if(!_auth || !_auth.onAuthStateChanged){
@@ -118,6 +127,17 @@
       _readyResolve && _readyResolve();
       return;
     }
+
+    // 🚫 بدون أي حفظ محلي للجلسة: اجعل الـ Auth في الذاكرة فقط
+    // في compat SDK: Persistence.NONE يعني عدم حفظ الجلسة في LocalStorage/SessionStorage.
+    try{
+      if(_auth.setPersistence && firebase.auth && firebase.auth.Auth && firebase.auth.Auth.Persistence){
+        _auth.setPersistence(firebase.auth.Auth.Persistence.NONE).catch(()=>{});
+      }
+    }catch(_e){}
+
+    // دعم signInWithRedirect كخيار بديل (مفيد للهواتف/حظر النوافذ المنبثقة)
+    try{ if(_auth.getRedirectResult) _auth.getRedirectResult().catch(()=>{}); }catch(_e){}
 
     _auth.onAuthStateChanged(async (u) => {
       setError("");
@@ -151,8 +171,19 @@
       if(!_auth) return setError("Firebase Auth غير متاح");
       try{
         const provider = new firebase.auth.GoogleAuthProvider();
-        await _auth.signInWithPopup(provider);
-        closeModal();
+        try{
+          await _auth.signInWithPopup(provider);
+          closeModal();
+        }catch(err){
+          // في بعض الأجهزة/المتصفحات قد تُحظر النافذة المنبثقة، استخدم Redirect كبديل
+          const code = String(err && (err.code || err.message) || "");
+          if(code.includes("auth/popup-blocked") || code.includes("auth/operation-not-supported-in-this-environment")){
+            setError(humanFirebaseError(err));
+            await _auth.signInWithRedirect(provider);
+            return;
+          }
+          throw err;
+        }
       }catch(err){
         setError(humanFirebaseError(err));
       }

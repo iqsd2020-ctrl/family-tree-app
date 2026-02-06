@@ -1,20 +1,35 @@
 /* storage.js
-   ربط التخزين مع Firestore + مزامنة لحظية + (اختياري) ربط الشجرة بالمستخدم عند تسجيل الدخول
+   Firestore-only storage layer (بدون أي تخزين محلي بالمتصفح)
 
-   ملاحظة مهمة: الصور تُحفظ في Firestore كـ Base64 (كنص داخل وثيقة "ملف")
-   وليس كصورة في Firebase Storage.
+   المتطلبات التي يحققها هذا الملف:
+   - مزامنة لحظية حقيقية عبر onSnapshot
+   - لا LocalStorage ولا IndexedDB Persistence
+   - كل شخص وثيقة مستقلة (Documents) ضمن المسار المسموح بالقواعد الحالية
+   - الصور تُضغط في المتصفح ثم تُخزّن كنص Base64 (وثيقة مستقلة مرتبطة بالشخص)
 
-   الهيكل:
-   - familyTrees/{treeId}
-       { tree: <الشجرة بدون الصور>, schemaVersion, updatedAt, clientUpdatedAt, ownerUid }
-   - familyTrees/{treeId}/files/{personId}
-       { base64, mime, name, bytes, updatedAt, clientUpdatedAt }
+   القيود:
+   - لا نغيّر قواعد Firestore الحالية. القواعد الحالية تسمح فقط بالوصول إلى:
+       /familyTrees/main
+       /familyTrees/main/files/*
+     لذلك يتم حفظ كل شيء بشكل منظم ضمن files/ كوثائق متعددة.
+
+   مخطط البيانات (Schema v2):
+   - /familyTrees/{treeId}
+       { schemaVersion: 2, rootId, clientUpdatedAt, updatedAt }
+   - /familyTrees/{treeId}/files/{docId}
+       نوعان من الوثائق:
+       1) شخص:
+          { type:'person', name, title, desc, cardColor, birthDate, deathDate,
+            parentId, orderIndex, clientUpdatedAt, updatedAt }
+       2) صورة:
+          { type:'photo', personId, mime, base64, bytes, clientUpdatedAt, updatedAt }
+          docId = `photo_${personId}`
 */
 (function(){
   const C = window.FTConfig || {};
-  const PUBLIC_TREE_ID = (C.PUBLIC_TREE_ID || "main");
+  const PUBLIC_TREE_ID = String(C.PUBLIC_TREE_ID || "main");
 
-  // --- Firebase config (حسب بياناتك) ---
+  // --- Firebase config ---
   const firebaseConfig = {
     apiKey: "AIzaSyDjFRpCoLs48wfLPwCd4DDJON948wC9swk",
     authDomain: "clan-9afa3.firebaseapp.com",
@@ -25,135 +40,43 @@
     measurementId: "G-FQDES1815B"
   };
 
-  const TREE_ID_KEY = "familyTree.firestore.treeId.v1";
-
-  // --- وضع الضيف (بدون Firestore): تخزين محلي ---
-  // نخزّن الشجرة (بما فيها الصور كـ DataURL) داخل LocalStorage.
-  // الهدف: تجنّب خطأ الصلاحيات عند قواعد Firestore التي تتطلب تسجيل الدخول.
-  const LOCAL_TREE_PREFIX = "familyTree.local.tree.v1.";
-  const LOCAL_EVENT_NAME = "FTLocalTreeChanged";
-
-  // --- حالة داخلية ---
+  // --- state ---
   let _inited = false;
   let _app = null;
   let _db = null;
   let _auth = null;
-  let _treeId = null;
-  let _knownPhotoIds = new Set();
+  let _treeId = PUBLIC_TREE_ID;
+
+  // لمعرفة ما يجب حذفه عند الحفظ/الاستيراد
+  let _knownFileDocIds = new Set();
 
   // Debounce للحفظ لتقليل عدد الكتابات
   let _saveTimer = null;
-  let _savePending = null; // آخر بيانات
+  let _savePending = null;
   let _savePromise = null;
   let _saveResolve = null;
   let _saveReject = null;
 
-  function uid(){
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return "id-" + Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
-  }
-
-  function ensureLocalTreeId(){
-    let id = localStorage.getItem(TREE_ID_KEY);
-    if(!id){
-      id = uid();
-      localStorage.setItem(TREE_ID_KEY, id);
-    }
-    return id;
-  }
-
   function init(){
     if(_inited) return;
-
     if(!window.firebase || !firebase.initializeApp){
-      throw new Error("Firebase SDK غير محمّل. تأكد من وجود سكربتات Firebase في index.html");
+      throw new Error("Firebase SDK غير محمّل. تأكد من سكربتات Firebase في index.html");
     }
 
-    // لا تكرر initializeApp إن كان التطبيق مهيأ مسبقاً
     if(firebase.apps && firebase.apps.length){
       _app = firebase.app();
     }else{
       _app = firebase.initializeApp(firebaseConfig);
     }
 
-    try{
-      // Analytics قد يفشل على file:// أو بدون HTTPS
-      if(firebase.analytics) firebase.analytics();
-    }catch(_e){}
+    try{ if(firebase.analytics) firebase.analytics(); }catch(_e){}
 
     _db = firebase.firestore();
 
-    // Persistence (اختياري) لتحسين التجربة عند انقطاع الانترنت
-    // يجب استدعاؤه مبكراً وقبل بدء الاستماع/القراءة المكثفة.
-    try{
-      if(_db.enablePersistence){
-        _db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
-      }
-    }catch(_e){}
+    // 🚫 لا تفعّل enablePersistence: هذا يسبب IndexedDB (مرفوض حسب الطلب)
 
-    // Auth (اختياري) — إن لم يتم تحميل firebase-auth-compat.js سيبقى null
-    try{
-      if(firebase.auth) _auth = firebase.auth();
-    }catch(_e){}
-
-    // اجعل الشجرة العامة الافتراضية للجميع
-    if(!_treeId) _treeId = PUBLIC_TREE_ID;
-
-    // افتراضي: شجرة عامة واحدة للجميع
-    _treeId = ensureLocalTreeId();
-
+    try{ if(firebase.auth) _auth = firebase.auth(); }catch(_e){}
     _inited = true;
-  }
-
-  // --- اختيار مصدر التخزين ---
-  // Firestore: فقط عند تسجيل الدخول (request.auth موجود)
-  function isAuthed(){
-    try{ return !!(_auth && _auth.currentUser && _auth.currentUser.uid); }catch{ return false; }
-  }
-
-  function useFirestore(){
-    // الشجرة عامة للقراءة للجميع (Firestore Rules تتحكم بالكتابة)
-    return true;
-  }
-
-  // --- LocalStorage backend (Guest) ---
-  function localKey(){
-    init();
-    return LOCAL_TREE_PREFIX + (_treeId || ensureLocalTreeId());
-  }
-
-  function localRead(){
-    try{
-      const raw = localStorage.getItem(localKey());
-      if(!raw) return null;
-      const obj = JSON.parse(raw);
-      if(obj && obj.tree) return obj;
-    }catch(_e){}
-    return null;
-  }
-
-  function localWrite(tree){
-    const payload = { tree: tree, clientUpdatedAt: Date.now() };
-    try{
-      localStorage.setItem(localKey(), JSON.stringify(payload));
-    }catch(e){
-      console.error("Local save failed", e);
-      throw e;
-    }
-
-    // بثّ إشعار (لنفس التبويب) لتحديث subscribe المحلي
-    try{
-      window.dispatchEvent(new CustomEvent(LOCAL_EVENT_NAME, { detail: { treeId: _treeId } }));
-    }catch(_e){}
-
-    return payload;
-  }
-
-  function localRemove(){
-    try{ localStorage.removeItem(localKey()); }catch(_e){}
-    try{
-      window.dispatchEvent(new CustomEvent(LOCAL_EVENT_NAME, { detail: { treeId: _treeId } }));
-    }catch(_e){}
   }
 
   function getApp(){ init(); return _app; }
@@ -162,12 +85,8 @@
 
   function setTreeId(id){
     init();
-    const next = (id && String(id).trim()) ? String(id).trim() : PUBLIC_TREE_ID;
-    const changed = next !== _treeId;
-    _treeId = next;
-    if(changed){
-      _knownPhotoIds = new Set();
-    }
+    _treeId = (id && String(id).trim()) ? String(id).trim() : PUBLIC_TREE_ID;
+    _knownFileDocIds = new Set();
     return _treeId;
   }
 
@@ -180,6 +99,7 @@
     return treeDocRef().collection("files");
   }
 
+  // --- helpers ---
   function extractDataUrl(dataUrl){
     if(!dataUrl || typeof dataUrl !== "string") return null;
     const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
@@ -200,150 +120,294 @@
     return Math.floor((b64.length * 3) / 4) - padding;
   }
 
-  function walkTree(node, fn){
+  function walkTree(node, fn, parentId="", orderIndex=0){
     if(!node || typeof node !== "object") return;
-    fn(node);
+    fn(node, parentId, orderIndex);
     if(Array.isArray(node.children)){
-      for(const ch of node.children) walkTree(ch, fn);
+      for(let i=0; i<node.children.length; i++){
+        walkTree(node.children[i], fn, node.id, i);
+      }
     }
   }
 
-  function stripPhotosForFirestore(tree){
-    // نسخة آمنة للحفظ بدون صور داخل الشجرة (الصور تُحفظ كـ "ملفات" منفصلة)
-    const clone = JSON.parse(JSON.stringify(tree));
-    walkTree(clone, (p) => {
-      const has = !!(p.photo && typeof p.photo === "string" && p.photo.startsWith("data:"));
-      if(has) p.photoFileId = p.id;
-      else p.photoFileId = "";
-      delete p.photo;
-    });
-    return clone;
+  function normalizeTreeShape(node){
+    // لا نكرر منطق utils.normalizeTree هنا بالكامل، لكن نضمن وجود حقول أساسية
+    const U = window.FTUtils;
+    if(U && U.normalizeTree) return U.normalizeTree(node);
+    // fallback minimal
+    return node;
   }
 
-  function collectPhotoFiles(tree){
-    const out = new Map();
-    walkTree(tree, (p) => {
-      if(!p || !p.id) return;
+  function flattenTreeToDocs(tree){
+    const t = normalizeTreeShape(tree);
+    const rootId = String(t && t.id || "");
+    const personDocs = new Map();
+    const photoDocs = new Map();
+
+    walkTree(t, (p, parentId, orderIndex) => {
+      const id = String(p.id || "");
+      if(!id) return;
+
+      // شخص
+      personDocs.set(id, {
+        type: "person",
+        name: String(p.name || "").trim() || "بدون اسم",
+        title: p.title ? String(p.title) : "",
+        desc: p.desc ? String(p.desc) : "",
+        cardColor: p.cardColor ? String(p.cardColor) : "default",
+        birthDate: p.birthDate ? String(p.birthDate) : "",
+        deathDate: p.deathDate ? String(p.deathDate) : "",
+        parentId: parentId ? String(parentId) : "",
+        orderIndex: Number.isFinite(orderIndex) ? orderIndex : 0,
+      });
+
+      // صورة: وثيقة مستقلة مرتبطة بالشخص
       if(p.photo && typeof p.photo === "string" && p.photo.startsWith("data:")){
         const parsed = extractDataUrl(p.photo);
         if(parsed && parsed.base64){
-          out.set(p.id, {
-            id: p.id,
+          const bytes = approximateBytesFromBase64(parsed.base64);
+          photoDocs.set(id, {
+            type: "photo",
+            personId: id,
             mime: parsed.mime || "image/jpeg",
             base64: parsed.base64,
-            name: (p.name ? String(p.name).trim() : "") || "photo",
-            bytes: approximateBytesFromBase64(parsed.base64)
+            bytes
           });
         }
       }
     });
-    return out;
+
+    return { rootId, personDocs, photoDocs };
   }
 
-  function mergeTreeWithFiles(treeWithoutPhotos, filesMap){
-    const merged = JSON.parse(JSON.stringify(treeWithoutPhotos));
-    walkTree(merged, (p) => {
-      const img = filesMap.get(p.id);
-      if(img) p.photo = img;
-      else p.photo = "";
-      if(p.photoFileId) delete p.photoFileId;
+  function buildTreeFromDocs(rootId, personDocs, photoDocs){
+    if(!personDocs || personDocs.size === 0) return null;
+
+    const map = new Map();
+    for(const [id, d] of personDocs.entries()){
+      const photo = photoDocs && photoDocs.get(id);
+      map.set(id, {
+        id,
+        name: d.name || "بدون اسم",
+        title: d.title || "",
+        desc: d.desc || "",
+        cardColor: d.cardColor || "default",
+        birthDate: d.birthDate || "",
+        deathDate: d.deathDate || "",
+        photo: (photo && photo.mime && photo.base64) ? makeDataUrl(photo.mime, photo.base64) : "",
+        children: [],
+        // مؤقت للترتيب
+        _parentId: d.parentId || "",
+        _orderIndex: Number(d.orderIndex || 0)
+      });
+    }
+
+    // اربط الأبناء
+    let fallbackRoot = null;
+    for(const [id, node] of map.entries()){
+      const pid = node._parentId;
+      if(pid && map.has(pid)){
+        map.get(pid).children.push(node);
+      }else{
+        // بدون أب: مرشح جذر
+        if(!fallbackRoot) fallbackRoot = node;
+      }
+    }
+
+    // رتب الأبناء حسب orderIndex ثم الاسم
+    for(const n of map.values()){
+      if(n.children && n.children.length){
+        n.children.sort((a,b) => {
+          const da = Number(a._orderIndex || 0), db = Number(b._orderIndex || 0);
+          if(da !== db) return da - db;
+          return String(a.name||"").localeCompare(String(b.name||""), "ar");
+        });
+      }
+      delete n._parentId;
+      delete n._orderIndex;
+    }
+
+    const rid = (rootId && map.has(rootId)) ? rootId : (fallbackRoot ? fallbackRoot.id : null);
+    return rid ? map.get(rid) : fallbackRoot;
+  }
+
+  function isSchemaV2(mainDocData){
+    const v = Number(mainDocData && mainDocData.schemaVersion || 0);
+    if(v >= 2) return true;
+    // علامة إضافية احتياطاً
+    if(mainDocData && mainDocData.rootId) return true;
+    return false;
+  }
+
+  function parseFilesSnapshotToDocs(filesSnap){
+    const personDocs = new Map();
+    const photoDocs = new Map();
+    const ids = new Set();
+
+    filesSnap.forEach(docSnap => {
+      ids.add(docSnap.id);
+      const d = docSnap.data() || {};
+      const t = String(d.type || "");
+
+      if(t === "person"){
+        personDocs.set(docSnap.id, d);
+      }else if(t === "photo"){
+        const pid = String(d.personId || "");
+        if(pid) photoDocs.set(pid, d);
+      }else{
+        // دعم قديم (v1): وثائق صور فقط بدون type
+        if(d.base64 && d.mime){
+          photoDocs.set(docSnap.id, { type: "photo", personId: docSnap.id, mime: d.mime, base64: d.base64, bytes: d.bytes || 0 });
+        }
+      }
     });
-    return merged;
+
+    _knownFileDocIds = ids;
+    return { personDocs, photoDocs };
   }
 
   async function load(){
     init();
 
-    // وضع الضيف: تخزين محلي (بدون Firestore)
-    if(!useFirestore()){
-      const payload = localRead();
-      return (payload && payload.tree) ? payload.tree : null;
-    }
-
     const ref = treeDocRef();
     const snap = await ref.get();
     if(!snap.exists) return null;
+    const main = snap.data() || {};
 
-    const data = snap.data() || {};
-    const tree = data.tree;
+    // v2: وثائق متعددة
+    if(isSchemaV2(main)){
+      const filesSnap = await filesColRef().get();
+      const { personDocs, photoDocs } = parseFilesSnapshotToDocs(filesSnap);
+      const tree = buildTreeFromDocs(String(main.rootId || ""), personDocs, photoDocs);
+      return tree;
+    }
+
+    // v1: شجرة واحدة + صور بملفات
+    const tree = main.tree;
     if(!tree) return null;
 
-    // حمّل كل "الملفات" (Base64) وألصقها بالشجرة كـ DataURL للعرض
     const filesSnap = await filesColRef().get();
-    const fileMap = new Map();
+    const photoDocs = new Map();
     const ids = new Set();
-
     filesSnap.forEach(docSnap => {
       const f = docSnap.data() || {};
       if(f.base64 && f.mime){
-        fileMap.set(docSnap.id, makeDataUrl(f.mime, f.base64));
+        photoDocs.set(docSnap.id, { mime: f.mime, base64: f.base64 });
         ids.add(docSnap.id);
       }
     });
+    _knownFileDocIds = ids;
 
-    _knownPhotoIds = ids;
-    return mergeTreeWithFiles(tree, fileMap);
+    // ألصق الصور داخل الشجرة
+    const merged = JSON.parse(JSON.stringify(tree));
+    walkTree(merged, (p) => {
+      const ph = photoDocs.get(p.id);
+      p.photo = ph ? makeDataUrl(ph.mime, ph.base64) : "";
+    });
+    return merged;
+  }
+
+  async function commitOpsInChunks(ops, chunkSize=450){
+    init();
+    for(let i=0; i<ops.length; i+=chunkSize){
+      const batch = _db.batch();
+      const slice = ops.slice(i, i+chunkSize);
+      for(const op of slice){
+        if(op.kind === "set") batch.set(op.ref, op.data, op.options || { merge: true });
+        else if(op.kind === "delete") batch.delete(op.ref);
+      }
+      await batch.commit();
+    }
   }
 
   async function _saveNowFirestore(tree){
     init();
-
     const ref = treeDocRef();
     const filesRef = filesColRef();
 
-    const photoFiles = collectPhotoFiles(tree);
-    const newPhotoIds = new Set(photoFiles.keys());
+    const { rootId, personDocs, photoDocs } = flattenTreeToDocs(tree);
+    if(!rootId){
+      throw new Error("تعذر تحديد جذر الشجرة");
+    }
 
-    const cleanTree = stripPhotosForFirestore(tree);
+    const desiredIds = new Set();
+    const ops = [];
 
-    const batch = _db.batch();
+    // لضمان حذف صحيح في أول عملية حفظ (حتى لو لم تكتمل subscribe بعد)
+    // لا نفعل هذا دائماً لتقليل القراءات.
+    if(!_knownFileDocIds || _knownFileDocIds.size === 0){
+      try{
+        const snap = await filesRef.get();
+        const ids = new Set();
+        snap.forEach(d => ids.add(d.id));
+        _knownFileDocIds = ids;
+      }catch(_e){}
+    }
 
-    const user = (_auth && _auth.currentUser) ? _auth.currentUser : null;
-
-    // الشجرة (بدون الصور)
-    batch.set(ref, {
-      tree: cleanTree,
-      schemaVersion: 1,
-      ownerUid: user ? user.uid : "",
-      clientUpdatedAt: Date.now(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    // ملفات الصور
-    for(const [personId, f] of photoFiles.entries()){
-      // حماية بسيطة من تجاوز حجم الوثيقة (1MiB)
-      if(f.bytes > 700 * 1024){
-        throw new Error("حجم الصورة بعد الضغط كبير جداً لهذا النوع من التخزين. جرّب صورة أصغر.");
-      }
-
-      batch.set(filesRef.doc(personId), {
-        base64: f.base64,
-        mime: f.mime,
-        name: f.name,
-        bytes: f.bytes,
+    // تحديث وثيقة الشجرة الرئيسية
+    ops.push({
+      kind: "set",
+      ref,
+      options: { merge: true },
+      data: {
+        schemaVersion: 2,
+        rootId,
         clientUpdatedAt: Date.now(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        // إزالة الحقل القديم (v1) إن وجد
+        tree: firebase.firestore.FieldValue.delete()
+      }
+    });
+
+    // وثائق الأشخاص
+    for(const [id, d] of personDocs.entries()){
+      desiredIds.add(id);
+      ops.push({
+        kind: "set",
+        ref: filesRef.doc(id),
+        // replace كامل لضمان تنظيف أي حقول قديمة (خصوصاً صور v1)
+        options: { merge: false },
+        data: {
+          ...d,
+          clientUpdatedAt: Date.now(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }
+      });
     }
 
-    // حذف ملفات لم تعد موجودة
-    for(const oldId of _knownPhotoIds){
-      if(!newPhotoIds.has(oldId)){
-        batch.delete(filesRef.doc(oldId));
+    // وثائق الصور
+    for(const [personId, d] of photoDocs.entries()){
+      // حماية من تجاوز حجم الوثيقة (1MiB)
+      if(d.bytes && Number(d.bytes) > 700 * 1024){
+        throw new Error("حجم الصورة بعد الضغط كبير جداً. جرّب صورة أصغر.");
+      }
+      const docId = `photo_${personId}`;
+      desiredIds.add(docId);
+      ops.push({
+        kind: "set",
+        ref: filesRef.doc(docId),
+        options: { merge: false },
+        data: {
+          ...d,
+          clientUpdatedAt: Date.now(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }
+      });
+    }
+
+    // حذف الوثائق القديمة غير الموجودة في الحالة الجديدة
+    // (يشمل صور وأشخاص سابقين)
+    for(const oldId of _knownFileDocIds){
+      if(!desiredIds.has(oldId)){
+        ops.push({ kind: "delete", ref: filesRef.doc(oldId) });
       }
     }
 
-    await batch.commit();
-    _knownPhotoIds = newPhotoIds;
-  }
-
-  async function _saveNowLocal(tree){
-    init();
-    localWrite(tree);
+    await commitOpsInChunks(ops);
+    _knownFileDocIds = desiredIds;
   }
 
   function save(tree){
-    // Debounce: كل استدعاء خلال فترة قصيرة يستبدل السابق
     _savePending = tree;
 
     if(!_savePromise){
@@ -360,8 +424,7 @@
       _saveTimer = null;
 
       try{
-        if(useFirestore()) await _saveNowFirestore(payload);
-        else await _saveNowLocal(payload);
+        await _saveNowFirestore(payload);
         if(_saveResolve) _saveResolve(true);
       }catch(err){
         console.error("Firestore save failed", err);
@@ -378,147 +441,158 @@
 
   async function clear(){
     init();
-
-    if(!useFirestore()){
-      localRemove();
-      _knownPhotoIds = new Set();
-      return;
-    }
-
     const ref = treeDocRef();
     const filesRef = filesColRef();
 
-    // احذف كل ملفات الصور أولاً
+    // احذف كل وثائق files على دفعات
     const snap = await filesRef.get();
-    const batch = _db.batch();
-    snap.forEach(d => batch.delete(d.ref));
-    batch.delete(ref);
-    await batch.commit();
-
-    _knownPhotoIds = new Set();
+    const ops = [];
+    snap.forEach(d => ops.push({ kind: "delete", ref: d.ref }));
+    // احذف وثيقة الشجرة الرئيسية
+    ops.push({ kind: "delete", ref });
+    await commitOpsInChunks(ops);
+    _knownFileDocIds = new Set();
   }
 
   /**
    * subscribe(onData, onError)
-   * مزامنة لحظية عبر onSnapshot. تعيد دالة unsubscribe.
-   *
-   * onData(mergedTree|null, meta)
+   * onData(tree|null, meta)
    * meta = { exists, fromCache, clientUpdatedAt, updatedAt, treeId }
    */
   function subscribe(onData, onError){
     init();
-
-    // وضع الضيف: مزامنة محلية بسيطة (بين التبويبات)
-    if(!useFirestore()){
-      let stopped = false;
-
-      const emit = () => {
-        if(stopped) return;
-        const payload = localRead();
-        const exists = !!(payload && payload.tree);
-        const meta = {
-          exists,
-          fromCache: true,
-          clientUpdatedAt: exists ? Number(payload.clientUpdatedAt || 0) : 0,
-          updatedAt: null,
-          treeId: _treeId
-        };
-        try{
-          if(typeof onData === "function") onData(exists ? payload.tree : null, meta);
-        }catch(e){
-          if(typeof onError === "function") onError(e);
-          else console.error(e);
-        }
-      };
-
-      const onLocalEvt = (e) => {
-        if(stopped) return;
-        // إن تغيّرت شجرة أخرى، تجاهل
-        if(e && e.detail && e.detail.treeId && e.detail.treeId !== _treeId) return;
-        emit();
-      };
-
-      const onStorage = (e) => {
-        if(stopped) return;
-        if(e && e.key === localKey()) emit();
-      };
-
-      // بثّ أولي
-      emit();
-
-      window.addEventListener(LOCAL_EVENT_NAME, onLocalEvt);
-      window.addEventListener("storage", onStorage);
-
-      return () => {
-        stopped = true;
-        try{ window.removeEventListener(LOCAL_EVENT_NAME, onLocalEvt); }catch{}
-        try{ window.removeEventListener("storage", onStorage); }catch{}
-      };
-    }
-
     const ref = treeDocRef();
     const filesRef = filesColRef();
 
-    let lastTree = null;
-    let lastMeta = { exists: false, fromCache: false, clientUpdatedAt: 0, updatedAt: null, treeId: _treeId };
-    let filesMap = new Map();
-    let haveFiles = false;
+    let mainSnap = null;
+    let filesSnap = null;
 
     function emit(){
-      if(typeof onData !== "function") return;
-      if(!lastTree){
-        onData(null, lastMeta);
-        return;
+      try{
+        if(!mainSnap || !mainSnap.exists){
+          const meta = {
+            exists: false,
+            fromCache: !!(mainSnap && mainSnap.metadata && mainSnap.metadata.fromCache),
+            clientUpdatedAt: 0,
+            updatedAt: null,
+            treeId: _treeId
+          };
+          if(typeof onData === "function") onData(null, meta);
+          return;
+        }
+
+        const main = mainSnap.data() || {};
+        const meta = {
+          exists: true,
+          fromCache: !!(mainSnap.metadata && mainSnap.metadata.fromCache),
+          clientUpdatedAt: Number(main.clientUpdatedAt || 0) || 0,
+          updatedAt: main.updatedAt || null,
+          treeId: _treeId
+        };
+
+        // لا نُصدر شيئاً قبل توفر snapshot للملفات (لتفادي flicker)
+        if(!filesSnap){
+          if(typeof onData === "function") onData(null, meta);
+          return;
+        }
+
+        // v2
+        if(isSchemaV2(main)){
+          const { personDocs, photoDocs } = parseFilesSnapshotToDocs(filesSnap);
+          const tree = buildTreeFromDocs(String(main.rootId || ""), personDocs, photoDocs);
+          if(typeof onData === "function") onData(tree, meta);
+          return;
+        }
+
+        // v1
+        const tree = main.tree;
+        if(!tree){
+          if(typeof onData === "function") onData(null, meta);
+          return;
+        }
+
+        const photoMap = new Map();
+        const ids = new Set();
+        filesSnap.forEach(docSnap => {
+          const f = docSnap.data() || {};
+          if(f.base64 && f.mime){
+            photoMap.set(docSnap.id, makeDataUrl(f.mime, f.base64));
+            ids.add(docSnap.id);
+          }
+        });
+        _knownFileDocIds = ids;
+
+        const merged = JSON.parse(JSON.stringify(tree));
+        walkTree(merged, (p) => {
+          const img = photoMap.get(p.id);
+          p.photo = img || "";
+        });
+        if(typeof onData === "function") onData(merged, meta);
+      }catch(err){
+        if(typeof onError === "function") onError(err);
+        else console.error(err);
       }
-      const merged = mergeTreeWithFiles(lastTree, filesMap);
-      onData(merged, lastMeta);
     }
 
-    const unsubTree = ref.onSnapshot((snap) => {
-      if(!snap.exists){
-        lastTree = null;
-        lastMeta = { exists: false, fromCache: snap.metadata?.fromCache || false, clientUpdatedAt: 0, updatedAt: null, treeId: _treeId };
-        emit();
-        return;
-      }
-      const data = snap.data() || {};
-      lastTree = data.tree || null;
-      lastMeta = {
-        exists: true,
-        fromCache: snap.metadata?.fromCache || false,
-        clientUpdatedAt: Number(data.clientUpdatedAt || 0) || 0,
-        updatedAt: data.updatedAt || null,
-        treeId: _treeId
-      };
-      emit();
-    }, (err) => {
+    const unsubMain = ref.onSnapshot((s) => { mainSnap = s; emit(); }, (err) => {
       if(typeof onError === "function") onError(err);
       else console.error(err);
     });
 
-    const unsubFiles = filesRef.onSnapshot((snap) => {
-      const m = new Map();
-      const ids = new Set();
-      snap.forEach(docSnap => {
-        const f = docSnap.data() || {};
-        if(f.base64 && f.mime){
-          m.set(docSnap.id, makeDataUrl(f.mime, f.base64));
-          ids.add(docSnap.id);
-        }
-      });
-      filesMap = m;
-      haveFiles = true;
-      _knownPhotoIds = ids;
-      emit();
-    }, (err) => {
+    const unsubFiles = filesRef.onSnapshot((s) => { filesSnap = s; emit(); }, (err) => {
       if(typeof onError === "function") onError(err);
       else console.error(err);
     });
 
     return () => {
-      try{ unsubTree && unsubTree(); }catch{}
+      try{ unsubMain && unsubMain(); }catch{}
       try{ unsubFiles && unsubFiles(); }catch{}
     };
+  }
+
+  // --- Import/Export helpers ---
+  function exportPayload(tree){
+    const { rootId, personDocs, photoDocs } = flattenTreeToDocs(tree);
+    const documents = [];
+    for(const [id, d] of personDocs.entries()) documents.push({ id, ...d });
+    for(const [personId, d] of photoDocs.entries()) documents.push({ id: `photo_${personId}`, ...d });
+    return {
+      schemaVersion: 2,
+      treeId: _treeId,
+      exportedAt: new Date().toISOString(),
+      rootId,
+      documents,
+      // نسخة بشرية (اختيارية) لسهولة المعاينة
+      tree
+    };
+  }
+
+  function importPayload(raw){
+    if(raw && typeof raw === "object" && Number(raw.schemaVersion || 0) >= 2 && Array.isArray(raw.documents)){
+      const personDocs = new Map();
+      const photoDocs = new Map();
+      for(const d of raw.documents){
+        if(!d || typeof d !== "object") continue;
+        const t = String(d.type || "");
+        if(t === "person" && d.id){
+          const id = String(d.id);
+          const copy = { ...d };
+          delete copy.id;
+          personDocs.set(id, copy);
+        }else if(t === "photo"){
+          const pid = String(d.personId || "");
+          if(pid){
+            const copy = { ...d };
+            delete copy.id;
+            photoDocs.set(pid, copy);
+          }
+        }
+      }
+      return buildTreeFromDocs(String(raw.rootId || ""), personDocs, photoDocs);
+    }
+
+    // شكل قديم: شجرة nested مباشرة
+    return normalizeTreeShape(raw);
   }
 
   window.FTStorage = {
@@ -526,17 +600,16 @@
     save,
     clear,
     subscribe,
-
     getApp,
     getDb,
     getAuth,
     setTreeId,
 
-    // افتراضي: رقم شجرة محلي للضيف (غير مزامن)
-    get localTreeId(){ return ensureLocalTreeId(); },
-    // رقم الشجرة الحالي (قد يكون uid عند تسجيل الدخول)
-    get currentTreeId(){ init(); return _treeId || ensureLocalTreeId(); },
-
-    KEY: TREE_ID_KEY
+    // أدوات استيراد/تصدير
+    exportPayload,
+    importPayload,
   };
+
+  // تهيئة Firebase مبكراً لضمان توفر Auth/Firestore للوحدات الأخرى
+  try{ init(); }catch(e){ console.error(e); }
 })();

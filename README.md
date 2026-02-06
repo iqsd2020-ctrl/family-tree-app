@@ -11,8 +11,11 @@
   - صورة مصغرة + معاينة في نافذة التفاصيل
   - لون بطاقة (مجموعة ألوان محددة)
   - تواريخ الولادة/الوفاة
-- ضغط الصور قبل رفعها وتخزينها في Firestore كـ Base64 (ضمن subcollection)
+- ضغط الصور قبل حفظها وتخزينها في Firestore كـ Base64 (كنص)
+- **كل شخص وثيقة مستقلة** داخل `familyTrees/main/files/{personId}`
+- **كل صورة وثيقة مستقلة** مرتبطة بالشخص داخل `familyTrees/main/files/photo_{personId}`
 - مزامنة لحظية عبر Firestore (Realtime via onSnapshot)
+- **لا يوجد أي حفظ محلي في المتصفح** (لا LocalStorage ولا IndexedDB Persistence)
 
 ## إعدادات المشروع
 تم وضع الإعدادات في:
@@ -65,6 +68,11 @@ npx serve .
 ```
 
 ثم افتح الرابط الذي يظهر لك.
+
+### أخطاء تسجيل الدخول الشائعة
+- **Firebase Auth غير متاح**: كانت تظهر عند محاولة الدخول قبل تهيئة Firebase App. تم إصلاحها بجعل تهيئة Firebase تتم مبكراً.
+- **auth/unauthorized-domain**: أضف الدومين الحالي إلى **Authorized domains** داخل Firebase Console → Authentication.
+- **popup-blocked**: اسمح بالنوافذ المنبثقة أو سيستخدم التطبيق التحويل (Redirect) تلقائياً.
 
 ## إعداد Firebase (خطوات سريعة)
 1) افتح Firebase Console → Authentication → Sign-in method  

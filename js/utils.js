@@ -169,7 +169,7 @@
   }
 
   // ضغط الصورة مهما كان حجمها: قصّ إلى مربع + ضغط تدريجي حتى <= maxBytes (مع محاولة الوصول لـ targetBytes)
-  // يتم الإرجاع DataURL (jpeg) للانسجام مع تخزين LocalStorage الحالي.
+  // يتم الإرجاع DataURL (jpeg) لاستخدامه مباشرة في العرض ثم تحويله/تخزينه كنص Base64 في Firestore.
   function processImageFile(file, size=200, quality=0.82, maxBytes=1024*1024, targetBytes=90*1024){
     return new Promise((resolve, reject) => {
       if(!file) return resolve("");
