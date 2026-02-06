@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>شجرة العائلة</title>
+
+  <!-- خطوط عربية مميزة -->
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Aref+Ruqaa:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <header>
+    <div class="header-row">
+      <div class="header-actions">
+        <button class="hdr-btn admin-only" id="btnManage" title="إدارة">⚙</button>
+        <button class="hdr-btn" id="btnAuth" title="الحساب">👤</button>
+      </div>
+
+      <div class="header-title">
+        <h1>شجرة العائلة</h1>
+        <div class="subtitle"><span>تصميم متجاوب ودقيق</span><span class="subtitle-sep">•</span><span id="syncStatus" class="sync-badge">...</span></div>
+      </div>
+
+      <div class="header-actions left">
+        <button class="hdr-btn" id="btnCenterRoot" title="توسيط الجذر">◎</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- منطقة عرض الشجرة -->
+  <div class="viewport" id="viewport">
+    <div class="pan-zoom-container" id="container">
+      <div class="tree">
+        <ul id="treeRoot"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- أدوات التحكم (Zoom) -->
+  <div class="controls controls-left">
+    <button class="ctrl-btn" id="btnZoomIn" title="تكبير">+</button>
+    <button class="ctrl-btn" id="btnZoomOut" title="تصغير">-</button>
+    <button class="ctrl-btn reset-btn" id="btnResetView" title="توسيط">توسط</button>
+  </div>
+
+  <!-- زر إضافة سريع -->
+  <div class="controls controls-right">
+    <button class="ctrl-btn admin-only" id="btnAddRootChild" title="إضافة ابن/ابنة للجذر">＋</button>
+  </div>
+
+  <!-- نافذة التفاصيل (Modal) -->
+  <div class="modal-overlay" id="modalDetails" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mName">
+      <div class="modal-header">
+        <h2 id="mName" style="margin:0; font-family:'Aref Ruqaa'">الاسم</h2>
+      </div>
+      <div class="modal-body">
+        <div class="modal-avatar-wrap">
+          <img id="mPhoto" class="modal-avatar" alt="صورة الشخص" />
+        </div>
+        <p id="mTitle" class="muted">اللقب</p>
+        <p id="mDates" class="muted" style="margin-top:-6px"></p>
+        <p id="mDesc">الوصف</p>
+
+        <div class="modal-actions">
+          <button class="action-btn admin-only" id="btnAddChild">إضافة ابن/ابنة</button>
+          <button class="action-btn admin-only" id="btnEditPerson">تعديل</button>
+          <button class="action-btn danger admin-only" id="btnDeletePerson">حذف</button>
+          <button class="action-btn ghost" id="btnCenterPerson">توسيط على الشخص</button>
+        </div>
+      </div>
+      <button class="modal-btn" id="btnCloseDetails">إغلاق</button>
+    </div>
+  </div>
+
+  <!-- نافذة الإضافة/التعديل -->
+  <div class="modal-overlay" id="modalForm" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fTitle">
+      <div class="modal-header">
+        <h2 id="fTitle" style="margin:0; font-family:'Aref Ruqaa'">إضافة</h2>
+      </div>
+      <div class="modal-body form-body">
+        <div class="form-row">
+          <label class="form-label">الاسم<span class="req">*</span></label>
+          <input class="form-input" id="fName" type="text" placeholder="مثال: محمد" autocomplete="off" />
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">اللقب</label>
+          <input class="form-input" id="fRole" type="text" placeholder="مثال: مهندس" autocomplete="off" />
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">الوصف</label>
+          <textarea class="form-input" id="fDesc" rows="4" placeholder="تفاصيل إضافية"></textarea>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">الصورة المصغّرة</label>
+          <input class="form-input" id="fPhoto" type="file" accept="image/*" />
+          <div class="hint" id="photoHint">سيتم حفظ الصورة في Firestore كملف Base64 (وليس كصورة). سيتم ضغطها تلقائياً لتكون صغيرة.</div>
+          <div class="preview-wrap">
+            <img id="fPhotoPreview" class="preview" alt="معاينة الصورة" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">لون البطاقة</label>
+          <select class="form-input" id="fCardColor">
+            <option value="default">الافتراضي</option>
+            <option value="emerald_dark">زمردي داكن</option>
+            <option value="yellow">أصفر</option>
+            <option value="orange">برتقالي</option>
+            <option value="light_pink">وردي فاتح</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">تاريخ الولادة</label>
+          <input class="form-input" id="fBirthDate" type="date" />
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">تاريخ الوفاة</label>
+          <input class="form-input" id="fDeathDate" type="date" />
+        </div>
+
+        <div class="form-actions">
+          <button class="action-btn" id="btnSavePerson">حفظ</button>
+          <button class="action-btn ghost" id="btnCancelForm">إلغاء</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة الإدارة -->
+  <div class="modal-overlay" id="modalManage" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mgTitle">
+      <div class="modal-header">
+        <h2 id="mgTitle" style="margin:0; font-family:'Aref Ruqaa'">إدارة المشروع</h2>
+      </div>
+      <div class="modal-body">
+        <div class="manage-grid">
+          <button class="action-btn admin-only" id="btnExport">تصدير البيانات</button>
+          <button class="action-btn admin-only" id="btnImport">استيراد البيانات</button>
+          <button class="action-btn danger admin-only" id="btnResetData">إعادة الضبط</button>
+          <button class="action-btn ghost" id="btnAbout">عن التطبيق</button>
+        </div>
+        <input id="fileImport" type="file" accept="application/json,.json" style="display:none" />
+      </div>
+      <button class="modal-btn" id="btnCloseManage">إغلاق</button>
+    </div>
+  </div>
+
+  <!-- نافذة تأكيد الحذف -->
+  <div class="modal-overlay" id="modalConfirm" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+      <div class="modal-header">
+        <h2 id="cTitle" style="margin:0; font-family:'Aref Ruqaa'">تأكيد</h2>
+      </div>
+      <div class="modal-body">
+        <p id="cText">هل أنت متأكد؟</p>
+        <div class="form-actions">
+          <button class="action-btn danger" id="btnConfirmYes">نعم</button>
+          <button class="action-btn ghost" id="btnConfirmNo">إلغاء</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- نافذة تسجيل الدخول / الحساب -->
+  <div class="modal-overlay" id="modalAuth" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="aTitle">
+      <div class="modal-header">
+        <h2 id="aTitle" style="margin:0; font-family:'Aref Ruqaa'">تسجيل الدخول</h2>
+      </div>
+      <div class="modal-body form-body">
+        <div class="hint" id="authHint" style="margin-bottom:12px;text-align:center">
+          تسجيل الدخول مخصص للمطور لإدارة الشجرة. الزائر يمكنه المشاهدة فقط.
+        </div>
+
+        <div class="manage-grid" style="margin-top:12px">
+          <button class="action-btn" id="btnLoginGoogle">تسجيل دخول المطور عبر Google</button>
+          <button class="action-btn danger" id="btnLogout" style="display:none">تسجيل الخروج</button>
+        </div>
+
+        <div class="hint" id="authError" style="display:none;color:#a62626;margin-top:10px"></div>
+      </div>
+      <button class="modal-btn" id="btnCloseAuth">إغلاق</button>
+    </div>
+  </div>
+
+
+  <!-- Firebase (Compat) - لتشغيل التطبيق مباشرة بدون Bundler -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics-compat.js"></script>
+
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

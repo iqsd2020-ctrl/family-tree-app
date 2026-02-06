@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email == "iq.sd.2020@gmail.com";
+    }
+
+    // شجرة واحدة عامة للجميع
+    match /familyTrees/{treeId} {
+      allow read: if treeId == "main";
+      allow write: if treeId == "main" && isAdmin();
+
+      // ملفات الصور (base64) لنفس الشجرة
+      match /files/{fileId} {
+        allow read: if treeId == "main";
+        allow write: if treeId == "main" && isAdmin();
+      }
+    }
+  }
+}
