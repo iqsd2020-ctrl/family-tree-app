@@ -652,7 +652,8 @@ async function _saveNowFirestore(tree){
             fromCache: !!(mainSnap && mainSnap.metadata && mainSnap.metadata.fromCache),
             clientUpdatedAt: 0,
             updatedAt: null,
-            treeId: _treeId
+            treeId: _treeId,
+            devCollapsedIds: []
           };
           if(typeof onData === "function") onData(null, meta);
           return;
@@ -664,7 +665,8 @@ async function _saveNowFirestore(tree){
           fromCache: !!(mainSnap.metadata && mainSnap.metadata.fromCache),
           clientUpdatedAt: (Number(main.clientUpdatedAt || 0) || 0) * 1000 + filesRev,
           updatedAt: main.updatedAt || null,
-          treeId: _treeId
+          treeId: _treeId,
+          devCollapsedIds: Array.isArray(main.devCollapsedIds) ? main.devCollapsedIds : []
         };
 
         // لا نُصدر شيئاً قبل توفر snapshot للملفات (لتفادي flicker)
@@ -731,6 +733,31 @@ async function _saveNowFirestore(tree){
     };
   }
 
+
+  async function loadDevCollapsedIds(){
+    init();
+    try{
+      const snap = await treeDocRef().get();
+      if(!snap.exists) return [];
+      const main = snap.data() || {};
+      const arr = Array.isArray(main.devCollapsedIds) ? main.devCollapsedIds : [];
+      return arr.map(x => String(x || "").trim()).filter(Boolean);
+    }catch(_e){
+      return [];
+    }
+  }
+
+  async function saveDevCollapsedIds(ids){
+    init();
+    const ref = treeDocRef();
+    const now = Date.now();
+    const arr = Array.isArray(ids) ? ids.map(x => String(x || "").trim()).filter(Boolean) : [];
+    await ref.set({
+      devCollapsedIds: arr,
+      clientUpdatedAt: now,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
   // --- Import/Export helpers ---
   function exportPayload(tree){
     const { rootId, personDocs, photoDocs } = flattenTreeToDocs(tree);
@@ -785,6 +812,9 @@ async function _saveNowFirestore(tree){
     getDb,
     getAuth,
     setTreeId,
+
+    loadDevCollapsedIds,
+    saveDevCollapsedIds,
 
     // أدوات استيراد/تصدير
     exportPayload,
