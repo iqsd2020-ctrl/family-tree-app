@@ -267,6 +267,7 @@ body.header-collapsed .header-search{
   transform-origin: 0 0;
   transition: transform 0.08s ease-out;
   padding: 100px;
+  padding-bottom: calc(100px + env(safe-area-inset-bottom) + 120px);
   will-change: transform;
 }
 
@@ -505,7 +506,8 @@ body.header-collapsed .header-search{
 /* --- أدوات التحكم --- */
 .controls {
   position: absolute;
-  bottom: 20px;
+  bottom: 36px;
+  bottom: calc(20px + env(safe-area-inset-bottom) + 16px);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -900,6 +902,7 @@ body.is-admin .admin-only-block{
 @media (max-width: 768px){
   .pan-zoom-container{
     padding: 40px;
+    padding-bottom: calc(40px + env(safe-area-inset-bottom) + 120px);
   }
 
   .tree ul{
