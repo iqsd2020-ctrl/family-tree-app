@@ -310,6 +310,81 @@ h1 {
   transform: translateX(-50%);
 }
 
+/* --- أوضاع عرض بديلة (تُفعل فقط من الأدوات) --- */
+.tree .alt-host{ display:none; }
+
+.tree.layout-vertical #treeRoot{ display:none; }
+.tree.layout-vertical .alt-host{ display:block; }
+
+
+.tree.layout-compact ul{
+  padding-top: 12px;
+}
+
+.tree.layout-compact li{
+  padding: 12px 4px 0 4px;
+}
+
+/* --- تخطيط عمودي (مفهوم: هذا ابن هذا) --- */
+.vertical-outline{
+  display:flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  direction: rtl;
+  padding-top: 10px;
+}
+
+.vnode{
+  position: relative;
+  display:flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.vrow{
+  position: relative;
+  display:flex;
+  align-items:center;
+}
+
+.vchildren{
+  margin-top: 10px;
+  margin-right: 22px;
+  padding-right: 18px;
+  border-right: var(--line-width) solid var(--border-color);
+  display:flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.vnode.has-parent > .vrow::before{
+  content:'';
+  position:absolute;
+  right:-18px;
+  top: 50%;
+  width: 18px;
+  border-top: var(--line-width) solid var(--border-color);
+}/* --- زر طي/توسيع الفروع (يظهر فقط عند تفعيل الأداة) --- */
+.collapse-toggle{
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--gold-color);
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* --- بطاقة العضو --- */
 .card {
   background: var(--card-bg);
@@ -489,6 +564,50 @@ h1 {
 
 .ctrl-btn:active { transform: scale(0.92); }
 .reset-btn { font-size: 0.85rem; font-family: 'Aref Ruqaa', serif; }
+
+/* --- قائمة أدوات العرض --- */
+.tools-wrap{
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tools-btn{
+  font-size: 1rem;
+}
+
+.tools-menu{
+  position: absolute;
+  left: 54px;
+  bottom: 0;
+  min-width: 190px;
+  background: rgba(255,255,255,0.96);
+  border: 2px solid var(--gold-color);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 950;
+}
+
+.tools-menu[aria-hidden="true"]{ display:none; }
+
+.tools-item{
+  width: 100%;
+  text-align: right;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: 'Aref Ruqaa', serif;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.tools-item:active{ transform: scale(0.98); }
+
 
 /* --- مؤشر تحميل البيانات --- */
 .loading-overlay{

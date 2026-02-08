@@ -65,6 +65,16 @@
 
   <!-- أدوات التحكم (Zoom) -->
   <div class="controls controls-left">
+    <div class="tools-wrap">
+      <button class="ctrl-btn tools-btn" id="btnTools" title="أدوات" aria-label="أدوات" type="button">🛠</button>
+      <div class="tools-menu" id="toolsMenu" aria-hidden="true">
+        <button class="tools-item" id="toolLayoutDefault" type="button">التخطيط الحالي</button>
+        <button class="tools-item" id="toolLayoutVertical" type="button">التخطيط العمودي</button>
+        <button class="tools-item" id="toolLayoutCompact" type="button">التخطيط المضغوط</button>
+        <button class="tools-item" id="toolToggleCollapse" type="button">طي/توسيع الفروع</button>
+      </div>
+    </div>
+
     <button class="ctrl-btn" id="btnZoomIn" title="تكبير">+</button>
     <button class="ctrl-btn" id="btnZoomOut" title="تصغير">-</button>
     <button class="ctrl-btn reset-btn" id="btnResetView" title="توسيط">توسط</button>

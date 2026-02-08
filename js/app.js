@@ -126,6 +126,13 @@ const loadingOverlay = document.getElementById("loadingOverlay");
   const hdrSearchResults = document.getElementById("hdrSearchResults");
 
   // Controls
+  const btnTools = document.getElementById("btnTools");
+  const toolsMenu = document.getElementById("toolsMenu");
+  const toolLayoutDefault = document.getElementById("toolLayoutDefault");
+  const toolLayoutVertical = document.getElementById("toolLayoutVertical");
+  const toolLayoutCompact = document.getElementById("toolLayoutCompact");
+  const toolToggleCollapse = document.getElementById("toolToggleCollapse");
+
   const btnZoomIn = document.getElementById("btnZoomIn");
   const btnZoomOut = document.getElementById("btnZoomOut");
   const btnResetView = document.getElementById("btnResetView");
@@ -248,6 +255,61 @@ let searchDebounce = null;
 
   function setTransform(){
     container.style.transform = `translate(${pointX}px, ${pointY}px) scale(${scale})`;
+  }
+
+  let contentW = 0;
+  let contentH = 0;
+
+  function updateContentSize(){
+    if(!container) return;
+
+    const prevW = container.style.width;
+    const prevH = container.style.height;
+
+    container.style.width = "auto";
+    container.style.height = "auto";
+
+    contentW = container.scrollWidth || 0;
+    contentH = container.scrollHeight || 0;
+
+    if(contentW) container.style.width = contentW + "px";
+    if(contentH) container.style.height = contentH + "px";
+
+    if(!contentW && prevW) container.style.width = prevW;
+    if(!contentH && prevH) container.style.height = prevH;
+  }
+
+  function clampPan(){
+    if(!viewport) return;
+    if(!contentW || !contentH) updateContentSize();
+
+    const vRect = viewport.getBoundingClientRect();
+    const w = contentW * scale;
+    const h = contentH * scale;
+
+    const edgePadding = 48;
+
+    const minX = vRect.width - w - edgePadding;
+    const minY = vRect.height - h - edgePadding;
+
+    if(minX > edgePadding){
+      pointX = (vRect.width - w) / 2;
+    }else{
+      if(pointX < minX) pointX = minX;
+      if(pointX > edgePadding) pointX = edgePadding;
+    }
+
+    if(minY > edgePadding){
+      pointY = (vRect.height - h) / 2;
+    }else{
+      if(pointY < minY) pointY = minY;
+      if(pointY > edgePadding) pointY = edgePadding;
+    }
+  }
+
+  function setTransformClamped(){
+    clampPan();
+    setTransform();
   }
 
   function clampScale(v){
@@ -445,6 +507,161 @@ let searchDebounce = null;
     });
   }
 
+  // --- أوضاع عرض الشجرة (تُفعل فقط من الأدوات) ---
+  let layoutMode = "default"; // default|vertical|compact
+  let collapseEnabled = false;
+  const collapsedSet = new Set();
+
+  function getTreeWrap(){
+    try{ return treeRootEl && treeRootEl.closest ? treeRootEl.closest(".tree") : null; }catch(_e){}
+    return null;
+  }
+
+  let altHost = null;
+  function ensureAltHost(){
+    if(altHost) return altHost;
+    const wrap = getTreeWrap();
+    if(!wrap) return null;
+    altHost = document.createElement("div");
+    altHost.className = "alt-host";
+    altHost.id = "altHost";
+    wrap.appendChild(altHost);
+    return altHost;
+  }
+
+  function applyActiveLayout(){
+    const wrap = getTreeWrap();
+    if(!wrap) return;
+
+    wrap.classList.toggle("layout-vertical", layoutMode === "vertical");
+    wrap.classList.toggle("layout-compact", layoutMode === "compact");
+
+    ensureAltHost();
+  }
+
+  function countLeaves(node){
+    if(!node) return 1;
+    const hasChildren = Array.isArray(node.children) && node.children.length;
+    if(!hasChildren) return 1;
+    if(collapseEnabled && collapsedSet.has(node.id)) return 1;
+    let s = 0;
+    for(const ch of node.children) s += countLeaves(ch);
+    return Math.max(1, s);
+  }
+
+  function collectNodes(node, depth, a0, a1, out){
+    if(!node) return;
+    const hasChildren = Array.isArray(node.children) && node.children.length;
+    const isCollapsed = collapseEnabled && collapsedSet.has(node.id);
+
+    const mid = (a0 + a1) / 2;
+    out.push({ node, depth, angle: mid });
+
+    if(!hasChildren || isCollapsed) return;
+
+    const total = node.children.reduce((acc, ch) => acc + countLeaves(ch), 0) || 1;
+    let cur = a0;
+    for(const ch of node.children){
+      const w = countLeaves(ch) / total;
+      const next = cur + (a1 - a0) * w;
+      collectNodes(ch, depth + 1, cur, next, out);
+      cur = next;
+    }
+  }
+
+  function renderVertical(){
+    const host = ensureAltHost();
+    if(!host) return;
+    host.innerHTML = "";
+
+    const root = document.createElement("div");
+    root.className = "vertical-outline";
+    host.appendChild(root);
+
+    function makeNode(person, depth, isRoot){
+      const wrap = document.createElement("div");
+      wrap.className = "vnode" + (depth ? " has-parent" : "");
+
+      const row = document.createElement("div");
+      row.className = "vrow";
+      const card = document.createElement("div");
+      const colorClass = U.cardColorClass(person.cardColor);
+      card.className = isRoot ? "card root" : ("card" + (colorClass ? (" " + colorClass) : ""));
+      card.dataset.id = person.id;
+      if(person.defaultOpen) card.classList.add("default-open");
+
+      const avatar = document.createElement(person.photo ? "img" : "div");
+      avatar.className = "avatar" + (person.photo ? "" : " placeholder");
+      if(person.photo){
+        avatar.src = person.photo;
+        avatar.alt = "صورة";
+      }else{
+        avatar.textContent = U.initials(person.name);
+      }
+
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = person.name;
+
+      card.appendChild(avatar);
+      card.appendChild(name);
+
+      if(person.title){
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = person.title;
+        card.appendChild(title);
+      }
+
+      const years = U.compactYears(person.birthDate, person.deathDate);
+      if(years){
+        const dates = document.createElement("div");
+        dates.className = "dates";
+        dates.textContent = years;
+        card.appendChild(dates);
+      }
+
+      const hasChildren = person.children && person.children.length;
+      const isCollapsed = collapseEnabled && collapsedSet.has(person.id);
+
+      if(collapseEnabled && hasChildren){
+        const tgl = document.createElement("button");
+        tgl.className = "collapse-toggle";
+        tgl.type = "button";
+        tgl.textContent = isCollapsed ? "+" : "−";
+        tgl.title = isCollapsed ? "توسيع" : "طي";
+        tgl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if(collapsedSet.has(person.id)) collapsedSet.delete(person.id);
+          else collapsedSet.add(person.id);
+          render(false);
+        });
+        card.appendChild(tgl);
+      }
+
+      card.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showDetails(person.id);
+      });
+
+      row.appendChild(card);
+      wrap.appendChild(row);
+
+      if(hasChildren && !(collapseEnabled && isCollapsed)){
+        const kids = document.createElement("div");
+        kids.className = "vchildren";
+        for(const ch of person.children){
+          kids.appendChild(makeNode(ch, depth + 1, false));
+        }
+        wrap.appendChild(kids);
+      }
+
+      return wrap;
+    }
+
+    root.appendChild(makeNode(state, 0, true));
+  }
+
   // --- بناء الشجرة ---
   function buildTree(person, isRoot=false){
     const li = document.createElement("li");
@@ -493,7 +710,25 @@ let searchDebounce = null;
 
     li.appendChild(card);
 
-    if(person.children && person.children.length){
+    const hasChildren = person.children && person.children.length;
+    const isCollapsed = collapseEnabled && collapsedSet.has(person.id);
+
+    if(collapseEnabled && hasChildren){
+      const tgl = document.createElement("button");
+      tgl.className = "collapse-toggle";
+      tgl.type = "button";
+      tgl.textContent = isCollapsed ? "+" : "−";
+      tgl.title = isCollapsed ? "توسيع" : "طي";
+      tgl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if(collapsedSet.has(person.id)) collapsedSet.delete(person.id);
+        else collapsedSet.add(person.id);
+        render(false);
+      });
+      card.appendChild(tgl);
+    }
+
+    if(hasChildren && !isCollapsed){
       const ul = document.createElement("ul");
       person.children.forEach(ch => ul.appendChild(buildTree(ch, false)));
       li.appendChild(ul);
@@ -504,8 +739,19 @@ let searchDebounce = null;
 
   function render(saveToRemote = true){
     treeRootEl.innerHTML = "";
-    treeRootEl.appendChild(buildTree(state, true));
+    const host = ensureAltHost();
+    if(host) host.innerHTML = "";
+
+    applyActiveLayout();
+
+    if(layoutMode === "default" || layoutMode === "compact"){
+      treeRootEl.appendChild(buildTree(state, true));
+    }else if(layoutMode === "vertical"){
+      renderVertical();
+    }
     highlightSelected();
+
+    requestAnimationFrame(() => { try{ updateContentSize(); }catch(_e){} });
 
     // تحديث فهرس البحث بعد أي تغيير في الشجرة
     try{ rebuildSearchIndex(); }catch(_e){}
@@ -1445,6 +1691,73 @@ initSearchUI();
     }
   });
 
+  // --- أدوات العرض ---
+  function afterLayoutChange(){
+    // ضمان ظهور التخطيط الجديد بشكل منظم داخل الشاشة دون تغيير إعدادات التكبير الحالية
+    requestAnimationFrame(() => {
+      try{ updateContentSize(); }catch(_e){}
+      const id = selectedId || (state && state.id);
+      const el = id ? document.querySelector(`.card[data-id="${id}"]`) : null;
+      if(el) centerOnElement(el);
+      else resetView();
+    });
+  }
+
+  function openToolsMenu(){
+    if(!toolsMenu) return;
+    toolsMenu.setAttribute("aria-hidden", "false");
+  }
+
+  function closeToolsMenu(){
+    if(!toolsMenu) return;
+    toolsMenu.setAttribute("aria-hidden", "true");
+  }
+
+  function toggleToolsMenu(){
+    if(!toolsMenu) return;
+    const hidden = toolsMenu.getAttribute("aria-hidden") === "true";
+    toolsMenu.setAttribute("aria-hidden", hidden ? "false" : "true");
+  }
+
+  btnTools && btnTools.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleToolsMenu();
+  });
+
+  toolsMenu && toolsMenu.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+
+  toolLayoutDefault && toolLayoutDefault.addEventListener("click", () => {
+    layoutMode = "default";
+    closeToolsMenu();
+    render(false);
+    afterLayoutChange();
+  });
+
+  toolLayoutVertical && toolLayoutVertical.addEventListener("click", () => {
+    layoutMode = "vertical";
+    closeToolsMenu();
+    render(false);
+    afterLayoutChange();
+  });
+
+  toolLayoutCompact && toolLayoutCompact.addEventListener("click", () => {
+    layoutMode = "compact";
+    closeToolsMenu();
+    render(false);
+    afterLayoutChange();
+  });
+
+  toolToggleCollapse && toolToggleCollapse.addEventListener("click", () => {
+    collapseEnabled = !collapseEnabled;
+    closeToolsMenu();
+    toastInfo(collapseEnabled ? "تم تفعيل الطي/التوسيع" : "تم إيقاف الطي/التوسيع");
+    render(false);
+  });
+
+  document.addEventListener("click", () => closeToolsMenu());
+
   // --- Pan & Zoom events ---
   btnZoomIn.addEventListener("click", zoomIn);
   btnZoomOut.addEventListener("click", zoomOut);
@@ -1472,7 +1785,7 @@ initSearchUI();
     e.preventDefault();
     pointX = e.clientX - startX;
     pointY = e.clientY - startY;
-    setTransform();
+    setTransformClamped();
   });
 
   function endMousePan(){
@@ -1516,7 +1829,7 @@ initSearchUI();
       const cy = e.touches[0].clientY;
       pointX += (cx - lastTouchX);
       pointY += (cy - lastTouchY);
-      setTransform();
+      setTransformClamped();
       lastTouchX = cx;
       lastTouchY = cy;
     }else if(touchMode === "pinch" && e.touches.length === 2){
