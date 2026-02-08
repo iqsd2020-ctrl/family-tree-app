@@ -175,6 +175,7 @@ function _canonPerson(d){
     birthDate: d && d.birthDate ? String(d.birthDate) : "",
     deathDate: d && d.deathDate ? String(d.deathDate) : "",
     devSigned: !!(d && d.devSigned),
+    defaultOpen: !!(d && d.defaultOpen),
     parentId: d && d.parentId ? String(d.parentId) : "",
     orderIndex: Number.isFinite(Number(d && d.orderIndex)) ? Number(d.orderIndex) : 0,
   };
@@ -243,6 +244,7 @@ function _canonEquals(a, b){
         birthDate: p.birthDate ? String(p.birthDate) : "",
         deathDate: p.deathDate ? String(p.deathDate) : "",
         devSigned: !!p.devSigned,
+        defaultOpen: !!p.defaultOpen,
         parentId: parentId ? String(parentId) : "",
         orderIndex: Number.isFinite(orderIndex) ? orderIndex : 0,
       });
@@ -281,6 +283,7 @@ function _canonEquals(a, b){
         birthDate: d.birthDate || "",
         deathDate: d.deathDate || "",
         devSigned: !!d.devSigned,
+        defaultOpen: !!d.defaultOpen,
         photo: (photo && photo.mime && photo.base64) ? makeDataUrl(photo.mime, photo.base64) : "",
         children: [],
         // مؤقت للترتيب

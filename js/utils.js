@@ -73,6 +73,7 @@
       birthDate: sanitizeIsoDate(node.birthDate),
       deathDate: sanitizeIsoDate(node.deathDate),
       devSigned: !!node.devSigned,
+      defaultOpen: !!node.defaultOpen,
       children: Array.isArray(node.children) ? node.children.map(normalizeTree).filter(Boolean) : []
     };
     return out;
@@ -380,6 +381,122 @@ function tokenizeArabic(str){
     URL.revokeObjectURL(url);
   }
 
+// --- Toast / Snackbar (بديل alert) ---
+let _lastToastKey = "";
+let _lastToastAt = 0;
+
+function ensureToastHost(){
+  let host = document.getElementById("toastHost");
+  if(!host){
+    host = document.createElement("div");
+    host.id = "toastHost";
+    host.className = "toast-host";
+    host.setAttribute("aria-live", "polite");
+    host.setAttribute("aria-relevant", "additions text");
+    host.setAttribute("aria-atomic", "false");
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+function toast(message, opts){
+  const o = opts && typeof opts === "object" ? opts : {};
+  const type = String(o.type || "info").toLowerCase();
+  const title = String(o.title || "");
+  const duration = (o.duration === 0) ? 0 : (Number(o.duration || 3200) || 3200);
+
+  const msg = String(message || "").trim();
+  if(!msg) return;
+
+  // dedupe سريع لمنع الإزعاج عند تكرار نفس الرسالة
+  const key = `${type}|${title}|${msg}`;
+  const now = Date.now();
+  if(key === _lastToastKey && (now - _lastToastAt) < 700) return;
+  _lastToastKey = key;
+  _lastToastAt = now;
+
+  const host = ensureToastHost();
+
+  // حد أقصى للتكديس
+  while(host.children.length >= 3){
+    host.removeChild(host.lastElementChild);
+  }
+
+  const el = document.createElement("div");
+  el.className = `toast toast--${type}`;
+  el.setAttribute("role", type === "error" ? "alert" : "status");
+
+  const icon = document.createElement("div");
+  icon.className = "toast-icon";
+  icon.textContent =
+    type === "success" ? "✅" :
+    type === "warning" ? "⚠️" :
+    type === "error" ? "⛔" : "ℹ️";
+
+  const body = document.createElement("div");
+  body.className = "toast-body";
+
+  if(title){
+    const t = document.createElement("div");
+    t.className = "toast-title";
+    t.textContent = title;
+    body.appendChild(t);
+  }
+
+  const m = document.createElement("div");
+  m.className = "toast-msg";
+  m.textContent = msg;
+  body.appendChild(m);
+
+  const close = document.createElement("button");
+  close.className = "toast-close";
+  close.type = "button";
+  close.setAttribute("aria-label", "إغلاق");
+  close.textContent = "×";
+
+  let timer = null;
+  let hiding = false;
+
+  function hide(){
+    if(hiding) return;
+    hiding = true;
+    if(timer) clearTimeout(timer);
+    el.classList.add("is-hiding");
+    setTimeout(() => {
+      try{ el.remove(); }catch{}
+    }, 180);
+  }
+
+  close.addEventListener("click", hide);
+  el.addEventListener("click", (e) => {
+    if(e.target === close) return;
+    hide();
+  });
+
+  el.appendChild(icon);
+  el.appendChild(body);
+  el.appendChild(close);
+  host.insertBefore(el, host.firstChild);
+
+  if(duration > 0){
+    timer = setTimeout(hide, duration);
+  }
+}
+
+function toastError(message, opts){
+  toast(message, Object.assign({}, opts || {}, { type: "error" }));
+}
+function toastSuccess(message, opts){
+  toast(message, Object.assign({}, opts || {}, { type: "success" }));
+}
+function toastWarning(message, opts){
+  toast(message, Object.assign({}, opts || {}, { type: "warning" }));
+}
+function toastInfo(message, opts){
+  toast(message, Object.assign({}, opts || {}, { type: "info" }));
+}
+
+
   window.FTUtils = {
     uid, deepClone, initials,
     findById, updateById, deleteById,
@@ -390,6 +507,7 @@ function tokenizeArabic(str){
     compactYears,
     formatLifeDates,
     normalizeArabic, lightStemArabic, tokenizeArabic,
-    downloadJson
+    downloadJson,
+    toast, toastInfo, toastSuccess, toastWarning, toastError
   };
 })();

@@ -19,7 +19,7 @@
   const btnLogout = document.getElementById("btnLogout");
   const authHint = document.getElementById("authHint");
   const authError = document.getElementById("authError");
-
+const AUTH_ICON_HTML = btnAuth ? btnAuth.innerHTML : "";
   function openModal(){
     if(!modalAuth) return;
     modalAuth.classList.add("open");
@@ -100,6 +100,22 @@
     }
     if(btnLoginGoogle){
       btnLoginGoogle.style.display = _user ? "none" : "inline-block";
+    }
+
+    if(btnAuth){
+      if(_user && _user.photoURL){
+        btnAuth.innerHTML = "";
+        const img = document.createElement("img");
+        img.className = "hdr-avatar";
+        img.alt = "حسابك";
+        img.referrerPolicy = "no-referrer";
+        const _p = String(_user.photoURL || "");
+        img.src = _p + (_p.includes("?") ? "&" : "?") + "sz=96&v=" + Date.now();
+        img.onerror = () => { btnAuth.innerHTML = AUTH_ICON_HTML; };
+        btnAuth.appendChild(img);
+      }else{
+        btnAuth.innerHTML = AUTH_ICON_HTML;
+      }
     }
 
     const isFile = (location.protocol === "file:");

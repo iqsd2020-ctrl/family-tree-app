@@ -18,18 +18,38 @@
 
   const { load, save, clear, subscribe } = S;
 
+
+// --- إشعارات بديلة لـ alert ---
+function toastMsg(type, message, opts){
+  try{
+    if(U && typeof U.toast === "function"){
+      U.toast(message, Object.assign({ type }, opts || {}));
+    }else{
+      alert(String(message || ""));
+    }
+  }catch(_e){
+    try{ alert(String(message || "")); }catch{}
+  }
+}
+
+function toastInfo(message, opts){ toastMsg("info", message, opts); }
+function toastSuccess(message, opts){ toastMsg("success", message, opts); }
+function toastWarning(message, opts){ toastMsg("warning", message, Object.assign({ title: "تنبيه" }, opts || {})); }
+function toastError(message, opts){ toastMsg("error", message, Object.assign({ title: "خطأ" }, opts || {})); }
+
+
   function isAdmin(){ return !!(Auth && Auth.isAdmin); }
   function isEditor(){ return !!(Auth && (Auth.isEditor || Auth.user)); }
 
   function requireAdmin(){
     if(isAdmin()) return true;
-    alert("هذه العملية متاحة للمطور فقط");
+    toastWarning("هذه العملية متاحة للمطور فقط");
     return false;
   }
 
   function requireEditor(){
     if(isEditor()) return true;
-    alert("سجّل الدخول عبر Google أولاً");
+    toastWarning("سجّل الدخول عبر Google أولاً");
     return false;
   }
 
@@ -42,6 +62,26 @@
       }
     }
     return false;
+  }
+
+  function findDefaultOpenId(node){
+    if(!node) return null;
+    if(node.defaultOpen) return node.id;
+    if(Array.isArray(node.children)){
+      for(const ch of node.children){
+        const hit = findDefaultOpenId(ch);
+        if(hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  function clearDefaultOpen(node){
+    if(!node) return;
+    node.defaultOpen = false;
+    if(Array.isArray(node.children)){
+      for(const ch of node.children) clearDefaultOpen(ch);
+    }
   }
 
 
@@ -75,8 +115,8 @@
   // --- عناصر DOM ---
   const treeRootEl = document.getElementById("treeRoot");
   const container = document.getElementById("container");
- if(container) container.style.transformOrigin = "0 0";
-   const viewport = document.getElementById("viewport");
+  if(container) container.style.transformOrigin = "0 0";
+  const viewport = document.getElementById("viewport");
   const syncStatusEl = document.getElementById("syncStatus");
 const loadingOverlay = document.getElementById("loadingOverlay");
   // Search (بحث ذكي في الهيدر)
@@ -99,12 +139,14 @@ const loadingOverlay = document.getElementById("loadingOverlay");
   const mTitle = document.getElementById("mTitle");
   const mDates = document.getElementById("mDates");
   const mDesc = document.getElementById("mDesc");
+  const mDescendants = document.getElementById("mDescendants");
   const mPhoto = document.getElementById("mPhoto");
   const btnCloseDetails = document.getElementById("btnCloseDetails");
   const btnAddChild = document.getElementById("btnAddChild");
   const btnAddParentRoot = document.getElementById("btnAddParentRoot");
   const btnEditPerson = document.getElementById("btnEditPerson");
   const btnDevSign = document.getElementById("btnDevSign");
+  const btnSetDefaultOpen = document.getElementById("btnSetDefaultOpen");
   const btnDeletePerson = document.getElementById("btnDeletePerson");
   const btnCenterPerson = document.getElementById("btnCenterPerson");
 
@@ -201,6 +243,8 @@ let searchDebounce = null;
   let lastTouchY = 0;
   let pinchStartDist = 0;
   let pinchStartScale = 1;
+  let pinchAnchorX = 0;
+  let pinchAnchorY = 0;
 
   function setTransform(){
     container.style.transform = `translate(${pointX}px, ${pointY}px) scale(${scale})`;
@@ -216,19 +260,17 @@ let searchDebounce = null;
     if(next === prev) return;
 
     const rect = viewport.getBoundingClientRect();
+    const cx = centerX ?? (rect.left + rect.width / 2);
+    const cy = centerY ?? (rect.top + rect.height / 2);
 
-    const cRect = container.getBoundingClientRect();
-    const baseX = (cRect.left - rect.left) - pointX;
-    const baseY = (cRect.top - rect.top) - pointY;
+    const ax = (cx - rect.left);
+    const ay = (cy - rect.top);
 
-    const cx = centerX ?? (rect.left + rect.width/2);
-    const cy = centerY ?? (rect.top + rect.height/2);
+    const wx = (ax - pointX) / prev;
+    const wy = (ay - pointY) / prev;
 
-    const vx = (cx - rect.left) - baseX;
-    const vy = (cy - rect.top) - baseY;
-
-    pointX = vx - (vx - pointX) * (next / prev);
-    pointY = vy - (vy - pointY) * (next / prev);
+    pointX = ax - wx * next;
+    pointY = ay - wy * next;
 
     scale = next;
     setTransform();
@@ -272,43 +314,73 @@ let searchDebounce = null;
 
   function zoomIn(){
     const a = getZoomAnchor();
-    if(a) zoomAt(0.1, a.x, a.y);
-    else zoomAt(0.1);
+    viewport.classList.add("is-gesturing");
+    zoomAt(0.1, a ? a.x : undefined, a ? a.y : undefined);
+    requestAnimationFrame(() => viewport.classList.remove("is-gesturing"));
   }
 
   function zoomOut(){
     const a = getZoomAnchor();
-    if(a) zoomAt(-0.1, a.x, a.y);
-    else zoomAt(-0.1);
+    viewport.classList.add("is-gesturing");
+    zoomAt(-0.1, a ? a.x : undefined, a ? a.y : undefined);
+    requestAnimationFrame(() => viewport.classList.remove("is-gesturing"));
   }
 
   function centerOnElement(el){
     if(!el) return;
 
+    const hadGesture = viewport.classList.contains("is-gesturing");
+    if(!hadGesture) viewport.classList.add("is-gesturing");
+
     const vRect = viewport.getBoundingClientRect();
-    const eRect = el.getBoundingClientRect();
+    let it = 0;
 
-    const vCenterX = vRect.left + vRect.width / 2;
-    const vCenterY = vRect.top + vRect.height / 2;
+    const step = () => {
+      const eRect = el.getBoundingClientRect();
 
-    const eCenterX = eRect.left + eRect.width / 2;
-    const eCenterY = eRect.top + eRect.height / 2;
+      const vCenterX = vRect.left + vRect.width / 2;
+      const vCenterY = vRect.top + vRect.height / 2;
 
-    const dx = (vCenterX - eCenterX);
-    const dy = (vCenterY - eCenterY) - 40;
+      const eCenterX = eRect.left + eRect.width / 2;
+      const eCenterY = eRect.top + eRect.height / 2;
 
-    pointX += dx;
-    pointY += dy;
-    setTransform();
+      const dx = (vCenterX - eCenterX);
+      const dy = (vCenterY - eCenterY);
+
+      pointX += dx;
+      pointY += dy;
+      setTransform();
+
+      it++;
+      if(it < 10 && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)){
+        requestAnimationFrame(step);
+      }else{
+        if(!hadGesture){
+          requestAnimationFrame(() => viewport.classList.remove("is-gesturing"));
+        }
+      }
+    };
+
+    step();
   }
 
   function resetView(){
-    scale = 1;
+    const isMobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+    scale = isMobile ? 0.85 : 1;
     pointX = 0;
     pointY = 0;
     setTransform();
 
     requestAnimationFrame(() => {
+      const defId = findDefaultOpenId(state);
+      if(defId){
+        selectedId = defId;
+        highlightSelected();
+        const el = document.querySelector(`.card[data-id="${defId}"]`);
+        if(el) centerOnElement(el);
+        return;
+      }
+
       const cards = Array.from(document.querySelectorAll(".card"));
       if(!cards.length) return;
 
@@ -320,11 +392,7 @@ let searchDebounce = null;
         if(r.top < minY) minY = r.top;
         if(r.right > maxX) maxX = r.right;
         if(r.bottom > maxY) maxY = r.bottom;
-        return {
-          el,
-          cx: r.left + r.width / 2,
-          cy: r.top + r.height / 2
-        };
+        return { el, cx: r.left + r.width/2, cy: r.top + r.height/2 };
       });
 
       const midX = (minX + maxX) / 2;
@@ -347,6 +415,36 @@ let searchDebounce = null;
     });
   }
 
+  function applyStartupView(){
+    const isMobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+    scale = isMobile ? 0.85 : 1;
+    pointX = 0;
+    pointY = 0;
+    setTransform();
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const defId = findDefaultOpenId(state);
+        if(defId){
+          selectedId = defId;
+          highlightSelected();
+          const el = document.querySelector(`.card[data-id="${defId}"]`);
+          if(el){
+            centerOnElement(el);
+            if(document.fonts && document.fonts.ready){
+              document.fonts.ready.then(() => {
+                const el2 = document.querySelector(`.card[data-id="${defId}"]`);
+                if(el2) centerOnElement(el2);
+              });
+            }
+          }
+        }else{
+          resetView();
+        }
+      });
+    });
+  }
+
   // --- بناء الشجرة ---
   function buildTree(person, isRoot=false){
     const li = document.createElement("li");
@@ -355,6 +453,7 @@ let searchDebounce = null;
     const colorClass = U.cardColorClass(person.cardColor);
     card.className = isRoot ? "card root" : ("card" + (colorClass ? (" " + colorClass) : ""));
     card.dataset.id = person.id;
+    if(person.defaultOpen) card.classList.add("default-open");
 
     const avatar = document.createElement(person.photo ? "img" : "div");
     avatar.className = "avatar" + (person.photo ? "" : " placeholder");
@@ -760,6 +859,20 @@ initSearchUI();
   }
 
   // --- تفاصيل الشخص ---
+  function toArabicDigits(n){
+    return String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[d]);
+  }
+
+  function countDescendants(node){
+    let count = 0;
+    if(node && Array.isArray(node.children)){
+      for(const ch of node.children){
+        count += 1 + countDescendants(ch);
+      }
+    }
+    return count;
+  }
+
   function showDetails(id){
     const person = U.findById(state, id);
     if(!person) return;
@@ -773,6 +886,12 @@ initSearchUI();
     mDates.textContent = life;
     mDates.style.display = life ? "block" : "none";
     mDesc.textContent = person.desc || "لا توجد تفاصيل إضافية";
+
+    if(mDescendants){
+      const n = countDescendants(person);
+      mDescendants.textContent = "عدد الذرية " + toArabicDigits(n) + " حتى الآن";
+      mDescendants.style.display = "block";
+    }
 
     if(person.photo){
       mPhoto.src = person.photo;
@@ -797,6 +916,12 @@ initSearchUI();
       else btnDevSign.style.display = "none";
       btnDevSign.disabled = !!(p && p.devSigned);
       btnDevSign.style.opacity = (p && p.devSigned) ? "0.5" : "1";
+    }
+
+    if(btnSetDefaultOpen){
+      btnSetDefaultOpen.disabled = !!(p && p.defaultOpen);
+      btnSetDefaultOpen.style.opacity = (p && p.defaultOpen) ? "0.5" : "1";
+      btnSetDefaultOpen.textContent = (p && p.defaultOpen) ? "الشخص الافتراضي" : "تعيين كافتراضي عند الفتح";
     }
 
     if(btnAddParentRoot){
@@ -836,7 +961,7 @@ initSearchUI();
     if(!requireEditor()) return;
     const p = U.findById(state, selectedId);
     if(p && p.devSigned && !isAdmin()){
-      alert("هذا الشخص موقّع من المطور ولا يمكن تعديله.");
+      toastWarning("هذا الشخص موقّع من المطور ولا يمكن تعديله.");
       return;
     }
     closeModal(modalDetails);
@@ -848,12 +973,26 @@ initSearchUI();
     const p = U.findById(state, selectedId);
     if(!p) return;
     if(p.devSigned){
-      alert("هذا الشخص موقّع بالفعل.");
+      toastInfo("هذا الشخص موقّع بالفعل.");
       return;
     }
     p.devSigned = true;
     render(true);
-    alert("تم توقيع الشخص من المطور.");
+    toastSuccess("تم توقيع الشخص من المطور.");
+  });
+
+  if(btnSetDefaultOpen) btnSetDefaultOpen.addEventListener("click", () => {
+    if(!requireAdmin()) return;
+    const p = U.findById(state, selectedId);
+    if(!p) return;
+    if(p.defaultOpen){
+      toastInfo("هذا الشخص هو الافتراضي بالفعل.");
+      return;
+    }
+    clearDefaultOpen(state);
+    p.defaultOpen = true;
+    render(true);
+    toastSuccess("تم تعيين الشخص كافتراضي عند الفتح.");
   });
 
   btnDeletePerson.addEventListener("click", () => {
@@ -861,14 +1000,14 @@ initSearchUI();
     if(selectedId === state.id) return;
     const target = U.findById(state, selectedId);
     if(target && subtreeHasDevSigned(target) && !isAdmin()){
-      alert("هذا الفرع يحتوي على أشخاص موقّعين من المطور ولا يمكن حذفه.");
+      toastWarning("هذا الفرع يحتوي على أشخاص موقّعين من المطور ولا يمكن حذفه.");
       return;
     }
     closeModal(modalDetails);
     confirm(`سيتم حذف "${U.findById(state, selectedId)?.name || ""}" وكل فروعه. هل تريد المتابعة؟`, () => {
       const target2 = U.findById(state, selectedId);
       if(target2 && subtreeHasDevSigned(target2) && !isAdmin()){
-        alert("هذا الفرع يحتوي على أشخاص موقّعين من المطور ولا يمكن حذفه.");
+        toastWarning("هذا الفرع يحتوي على أشخاص موقّعين من المطور ولا يمكن حذفه.");
         return;
       }
       U.deleteById(state, selectedId);
@@ -1015,7 +1154,7 @@ initSearchUI();
           fr.onload = () => { cropImg.src = String(fr.result || ""); };
           fr.onerror = () => {
             cancelCrop(true);
-            alert("تعذر قراءة الصورة. جرّب صورة أخرى بصيغة JPG/PNG.");
+            toastError("تعذر قراءة الصورة. جرّب صورة أخرى بصيغة JPG/PNG.");
           };
           fr.readAsDataURL(file);
           return;
@@ -1025,9 +1164,9 @@ initSearchUI();
         const ext = (file && file.name ? file.name.split(".").pop().toLowerCase() : "");
         const type = (file && file.type ? file.type.toLowerCase() : "");
         if(type === "image/heic" || type === "image/heif" || ext === "heic" || ext === "heif"){
-          alert("صيغة الصورة HEIC/HEIF غير مدعومة في هذا المتصفح. رجاءً حوّلها إلى JPG أو PNG ثم أعد المحاولة.");
+          toastError("صيغة الصورة HEIC/HEIF غير مدعومة في هذا المتصفح. رجاءً حوّلها إلى JPG أو PNG ثم أعد المحاولة.");
         }else{
-          alert("تعذر تحميل الصورة. جرّب صورة بصيغة JPG/PNG.");
+          toastError("تعذر تحميل الصورة. جرّب صورة بصيغة JPG/PNG.");
         }
       };
       cropImg.src = cropObjectUrl;
@@ -1109,7 +1248,7 @@ initSearchUI();
 
       cancelCrop(false);
     }catch(err){
-      alert(err.message || "تعذر معالجة الصورة");
+      toastError(err.message || "تعذر معالجة الصورة");
       cancelCrop(true);
     }finally{
       btnSavePerson.disabled = false;
@@ -1164,7 +1303,7 @@ initSearchUI();
         fPhotoPreview.src = dataUrl;
         fPhotoPreview.style.display = "block";
       }catch(err){
-        alert(err.message || "تعذر معالجة الصورة");
+        toastError(err.message || "تعذر معالجة الصورة");
         fPhoto.value = "";
       }finally{
         btnSavePerson.disabled = false;
@@ -1179,7 +1318,7 @@ initSearchUI();
     if(!requireEditor()) return;
     const name = String(fName.value || "").trim();
     if(!name){
-      alert("الاسم مطلوب");
+      toastWarning("الاسم مطلوب");
       fName.focus();
       return;
     }
@@ -1193,13 +1332,13 @@ initSearchUI();
 
     const dateErr = U.validateDates(birthDate, deathDate);
     if(dateErr){
-      alert(dateErr);
+      toastWarning(dateErr);
       return;
     }
 
     if(formMode === "addChild"){
       const parent = U.findById(state, formParentId);
-      if(!parent){ alert("تعذر إيجاد الأب/الأم"); return; }
+      if(!parent){ toastError("تعذر إيجاد الأب/الأم"); return; }
       if(!Array.isArray(parent.children)) parent.children = [];
       parent.children.push(U.normalizeTree({ id: U.uid(), name, title, desc, photo, cardColor, birthDate, deathDate, children: [] }));
       selectedId = parent.children[parent.children.length - 1].id;
@@ -1216,11 +1355,11 @@ initSearchUI();
     }else{
       const cur = U.findById(state, selectedId);
       if(cur && cur.devSigned && !isAdmin()){
-        alert("هذا الشخص موقّع من المطور ولا يمكن تعديله.");
+        toastWarning("هذا الشخص موقّع من المطور ولا يمكن تعديله.");
         return;
       }
       const ok = U.updateById(state, selectedId, { name, title, desc, photo, cardColor, birthDate, deathDate });
-      if(!ok){ alert("تعذر التعديل"); return; }
+      if(!ok){ toastError("تعذر التعديل"); return; }
       render(true);
       closeModal(modalForm);
       requestAnimationFrame(() => showDetails(selectedId));
@@ -1258,9 +1397,9 @@ initSearchUI();
       render(true);
       closeModal(modalManage);
       requestAnimationFrame(resetView);
-      alert("تم الاستيراد بنجاح. سيتم بناء الوثائق الجديدة على Firestore.");
+      toastSuccess("تم الاستيراد بنجاح. سيتم بناء الوثائق الجديدة على Firestore.");
     }catch(err){
-      alert("فشل الاستيراد: " + (err.message || "خطأ غير معروف"));
+      toastError("فشل الاستيراد: " + (err.message || "خطأ غير معروف"));
     }finally{
       fileImport.value = "";
     }
@@ -1280,7 +1419,7 @@ initSearchUI();
   });
 
   btnAbout.addEventListener("click", () => {
-    alert("تطبيق شجرة العائلة يعمل داخل المتصفح مع حفظ البيانات على Firestore (بدون أي حفظ محلي).\n\n- قراءة عامة للزوار\n- تعديل/إدارة للمطور فقط\n- كل شخص وثيقة مستقلة داخل Firestore\n- الصور تُضغط تلقائياً ثم تُحفظ كنص Base64 في وثيقة صورة مرتبطة بالشخص\n- مزامنة لحظية");
+    toastInfo("تطبيق شجرة العائلة يعمل داخل المتصفح مع حفظ البيانات على Firestore.\n\n- قراءة عامة للزوار\n- تعديل/إدارة للمطور فقط\n- كل شخص وثيقة مستقلة داخل Firestore\n- الصور تُضغط تلقائياً ثم تُحفظ كنص Base64 في وثيقة صورة مرتبطة بالشخص\n- مزامنة لحظية", { title: "عن التطبيق", duration: 0 });
   });
 
   // --- تأكيد ---
@@ -1301,7 +1440,7 @@ initSearchUI();
         if(r && typeof r.then === "function") await r;
       }catch(err){
         console.error(err);
-        alert(err.message || "حدث خطأ أثناء تنفيذ العملية");
+        toastError(err.message || "حدث خطأ أثناء تنفيذ العملية");
       }
     }
   });
@@ -1316,7 +1455,7 @@ initSearchUI();
       centerOnElement(rootCard);
     });
   }
-  btnAddRootChild.addEventListener("click", () => { if(!requireEditor()) return; openAddChildForm(state.id); });
+  btnAddRootChild && btnAddRootChild.addEventListener("click", () => { if(!requireEditor()) return; openAddChildForm(state.id); });
 
   // Mouse pan
   viewport.addEventListener("mousedown", (e) => {
@@ -1359,13 +1498,16 @@ initSearchUI();
       lastTouchX = e.touches[0].clientX;
       lastTouchY = e.touches[0].clientY;
     }else if(e.touches.length === 2){
+      e.preventDefault();
       touchMode = "pinch";
+      pinchAnchorX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      pinchAnchorY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       pinchStartDist = Math.hypot(dx, dy);
       pinchStartScale = scale;
     }
-  }, { passive: true });
+  }, { passive: false });
 
   viewport.addEventListener("touchmove", (e) => {
     if(touchMode === "pan" && e.touches.length === 1){
@@ -1385,23 +1527,22 @@ initSearchUI();
       const ratio = dist / (pinchStartDist || dist);
       const nextScale = clampScale(pinchStartScale * ratio);
 
-      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const mx = pinchAnchorX;
+      const my = pinchAnchorY;
 
       const prev = scale;
       scale = nextScale;
 
       const rect = viewport.getBoundingClientRect();
 
-      const cRect = container.getBoundingClientRect();
-      const baseX = (cRect.left - rect.left) - pointX;
-      const baseY = (cRect.top - rect.top) - pointY;
+      const ax = (mx - rect.left);
+      const ay = (my - rect.top);
 
-      const vx = (mx - rect.left) - baseX;
-      const vy = (my - rect.top) - baseY;
+      const wx = (ax - pointX) / prev;
+      const wy = (ay - pointY) / prev;
 
-      pointX = vx - (vx - pointX) * (scale / prev);
-      pointY = vy - (vy - pointY) * (scale / prev);
+      pointX = ax - wx * scale;
+      pointY = ay - wy * scale;
 
       setTransform();
     }
@@ -1462,7 +1603,7 @@ initSearchUI();
 
     // ارسم بدون حفظ إضافي (البيانات إما جاءت من Firestore أو تم حفظ العينة أعلاه)
     render(false);
-    resetView();
+    applyStartupView();
     hideLoading();
 
     // ابدأ المزامنة اللحظية
