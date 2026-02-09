@@ -134,6 +134,7 @@ const loadingOverlay = document.getElementById("loadingOverlay");
   const toolsMenu = document.getElementById("toolsMenu");
   const toolLayoutDefault = document.getElementById("toolLayoutDefault");
   const toolToggleCollapse = document.getElementById("toolToggleCollapse");
+  const btnToggleTree = document.getElementById("btnToggleTree");
 
   const btnZoomIn = document.getElementById("btnZoomIn");
   const btnZoomOut = document.getElementById("btnZoomOut");
@@ -1729,6 +1730,34 @@ initHeaderToggle();
     closeToolsMenu();
     toastInfo(collapseEnabled ? "تم تفعيل الطي/التوسيع" : "تم إيقاف الطي/التوسيع");
     render(false);
+  });
+
+  btnToggleTree && btnToggleTree.addEventListener("click", () => {
+    if(collapseEnabled){
+      collapseEnabled = false;
+      btnToggleTree.textContent = "⤡";
+      btnToggleTree.title = "إرجاع الطي الافتراضي";
+      btnToggleTree.setAttribute("aria-label", "إرجاع الطي الافتراضي");
+    }else{
+      collapseEnabled = true;
+      userCollapsedSet.clear();
+      userOpenedSet.clear();
+      btnToggleTree.textContent = "⤢";
+      btnToggleTree.title = "توسيع الشجرة بالكامل";
+      btnToggleTree.setAttribute("aria-label", "توسيع الشجرة بالكامل");
+    }
+    render(false);
+    requestAnimationFrame(() => {
+      try{ updateContentSize(); }catch(_e){}
+      scale = clampScale(0);
+      pointX = 0;
+      pointY = 0;
+      setTransformClamped();
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`.card[data-id="${selectedId}"]`) || document.querySelector(`.card[data-id="${state.id}"]`);
+        if(el) centerOnElement(el);
+      });
+    });
   });
 
   document.addEventListener("click", () => closeToolsMenu());
