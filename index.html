@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="theme-color" content="#143d22" />
   <title>شجرة السادة اليعقوبيين</title>
-
-  <!-- خطوط عربية مميزة -->
   <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Aref+Ruqaa:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="manifest" href="manifest.json" />
@@ -16,7 +14,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 </head>
 <body>
-
   <header>
     <div class="header-row">
       <div class="header-actions">
@@ -36,14 +33,14 @@
       </div>
     </div>
 
-<div class="header-search" id="headerSearch">
-  <div class="search-box" role="search">
-    <span class="search-icon" aria-hidden="true">🔎</span>
-    <input id="hdrSearchInput" class="search-input" type="search" placeholder="اكتب الاسم الثلاثي..." autocomplete="off" />
-    <button id="hdrSearchClear" class="search-clear" title="مسح" aria-label="مسح" type="button">×</button>
-  </div>
-  <div id="hdrSearchResults" class="search-results" role="listbox" aria-label="نتائج البحث"></div>
-</div>
+    <div class="header-search" id="headerSearch">
+      <div class="search-box" role="search">
+        <span class="search-icon" aria-hidden="true">🔎</span>
+        <input id="hdrSearchInput" class="search-input" type="search" placeholder="اكتب الاسم الثلاثي..." autocomplete="off" />
+        <button id="hdrSearchClear" class="search-clear" title="مسح" aria-label="مسح" type="button">×</button>
+      </div>
+      <div id="hdrSearchResults" class="search-results" role="listbox" aria-label="نتائج البحث"></div>
+    </div>
 
   </header>
 
@@ -114,48 +111,43 @@
       </div>
       <div class="modal-body form-body">
         <div class="form-row">
-          <label class="form-label">الاسم<span class="req">*</span></label>
-          <input class="form-input" id="fName" type="text" placeholder="مثال: محمد" autocomplete="off" />
+          <input class="form-input" id="fName" type="text" placeholder="الاسم *" autocomplete="off" />
         </div>
 
         <div class="form-row">
-          <label class="form-label">اللقب</label>
-          <input class="form-input" id="fRole" type="text" placeholder="مثال: مهندس" autocomplete="off" />
+          <input class="form-input" id="fRole" type="text" placeholder="اللقب" autocomplete="off" />
         </div>
 
         <div class="form-row">
-          <label class="form-label">الوصف</label>
-          <textarea class="form-input" id="fDesc" rows="4" placeholder="تفاصيل إضافية"></textarea>
+          <textarea class="form-input" id="fDesc" rows="4" placeholder="الوصف"></textarea>
         </div>
 
         <div class="form-row">
-          <label class="form-label">الصورة المصغّرة</label>
-          <input class="form-input" id="fPhoto" type="file" accept="image/*" />
-          <div class="hint" id="photoHint">سيتم ضغط الصورة تلقائياً ثم حفظها في Firestore كنص Base64 داخل <b>وثيقة صورة مستقلة</b> مرتبطة بهذا الشخص. وفي حال تعذر الحفظ سيتم الاحتفاظ بنسخة محلية على هذا الجهاز.</div>
+          <div class="file-input-wrap" id="fPhotoWrap">
+            <input class="form-input" id="fPhoto" type="file" accept="image/*" />
+            <div class="file-placeholder" id="fPhotoPlaceholder"></div>
+          </div>
           <div class="preview-wrap">
             <img id="fPhotoPreview" class="preview" alt="معاينة الصورة" />
           </div>
         </div>
 
         <div class="form-row">
-          <label class="form-label">لون البطاقة</label>
-          <select class="form-input" id="fCardColor">
-            <option value="default">الافتراضي</option>
-            <option value="emerald_dark">زمردي داكن</option>
-            <option value="yellow">أصفر</option>
-            <option value="orange">برتقالي</option>
-            <option value="light_pink">وردي فاتح</option>
-          </select>
+  <select class="form-input" id="fCardColor" aria-label="لون البطاقة" title="لون البطاقة">
+    <option value="" disabled selected hidden>لون البطاقة</option>
+    <option value="default">الافتراضي</option>
+    <option value="emerald_dark">زمردي داكن</option>
+    <option value="black">أسود</option>
+    <option value="gray">رمادي</option>
+  </select>
+</div>
+
+        <div class="form-row">
+          <input class="form-input" id="fBirthDate" type="text" inputmode="numeric" placeholder="تاريخ الولادة" />
         </div>
 
         <div class="form-row">
-          <label class="form-label">تاريخ الولادة</label>
-          <input class="form-input" id="fBirthDate" type="text" inputmode="numeric" />
-        </div>
-
-        <div class="form-row">
-          <label class="form-label">تاريخ الوفاة</label>
-          <input class="form-input" id="fDeathDate" type="text" inputmode="numeric" />
+          <input class="form-input" id="fDeathDate" type="text" inputmode="numeric" placeholder="تاريخ الوفاة" />
         </div>
 
         <div class="form-actions">

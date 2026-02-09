@@ -81,7 +81,7 @@
 
   function sanitizeCardColor(v){
     const key = String(v || "default").trim();
-    const allowed = new Set(["default","emerald_dark","yellow","orange","light_pink"]);
+    const allowed = new Set(["default","emerald_dark","black","gray"]);
     return allowed.has(key) ? key : "default";
   }
 
@@ -132,9 +132,8 @@
   function cardColorClass(cardColorKey){
     switch (sanitizeCardColor(cardColorKey)){
       case "emerald_dark": return "color-emerald-dark";
-      case "yellow": return "color-yellow";
-      case "orange": return "color-orange";
-      case "light_pink": return "color-light-pink";
+      case "black": return "color-black";
+      case "gray": return "color-gray";
       default: return "";
     }
   }

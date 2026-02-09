@@ -168,6 +168,7 @@ const loadingOverlay = document.getElementById("loadingOverlay");
   const fDesc = document.getElementById("fDesc");
   const fPhoto = document.getElementById("fPhoto");
   const fPhotoPreview = document.getElementById("fPhotoPreview");
+  const fPhotoWrap = document.getElementById("fPhotoWrap");
   const photoHint = document.getElementById("photoHint");
   const fCardColor = document.getElementById("fCardColor");
   const fBirthDate = document.getElementById("fBirthDate");
@@ -1263,8 +1264,9 @@ initHeaderToggle();
     fPhotoPreview.src = "";
     fPhotoPreview.style.display = "none";
     pendingPhotoDataUrl = "";
+    if(fPhotoWrap) fPhotoWrap.classList.remove("has-file");
 
-    if(fCardColor) fCardColor.value = "default";
+    if(fCardColor) fCardColor.value = "";
     if(fBirthDate) fBirthDate.value = "";
     if(fDeathDate) fDeathDate.value = "";
   }
@@ -1307,6 +1309,7 @@ initHeaderToggle();
       fPhotoPreview.src = p.photo;
       fPhotoPreview.style.display = "block";
       pendingPhotoDataUrl = p.photo;
+      if(fPhotoWrap) fPhotoWrap.classList.add("has-file");
     }
     openModal(modalForm);
     setTimeout(() => fName.focus(), 60);
@@ -1424,7 +1427,16 @@ initHeaderToggle();
       }
     }
 
-    if(cropImg) cropImg.src = "";
+    if(fPhotoWrap){
+      if(pendingPhotoDataUrl) fPhotoWrap.classList.add("has-file");
+      else fPhotoWrap.classList.remove("has-file");
+    }
+
+    if(cropImg){
+      cropImg.onload = null;
+      cropImg.onerror = null;
+      cropImg.src = "";
+    }
     if(cropObjectUrl){ try{ URL.revokeObjectURL(cropObjectUrl); }catch{} cropObjectUrl = ""; }
 
     closeModal(modalCrop);
@@ -1482,6 +1494,7 @@ initHeaderToggle();
       pendingPhotoDataUrl = dataUrl;
       fPhotoPreview.src = dataUrl;
       fPhotoPreview.style.display = "block";
+      if(fPhotoWrap) fPhotoWrap.classList.add("has-file");
 
       cancelCrop(false);
     }catch(err){
@@ -1530,6 +1543,8 @@ initHeaderToggle();
     const file = fPhoto.files && fPhoto.files[0];
     if(!file) return;
 
+    if(fPhotoWrap) fPhotoWrap.classList.add("has-file");
+
     // إن لم تتوفر نافذة القص لأي سبب، ارجع للطريقة القديمة (ضغط مباشر)
     if(!openCropperForFile(file)){
       try{
@@ -1542,6 +1557,7 @@ initHeaderToggle();
       }catch(err){
         toastError(err.message || "تعذر معالجة الصورة");
         fPhoto.value = "";
+        if(!pendingPhotoDataUrl && fPhotoWrap) fPhotoWrap.classList.remove("has-file");
       }finally{
         btnSavePerson.disabled = false;
         if(photoHint) photoHint.textContent = "سيتم حفظ الصورة في Firestore كملف Base64. سيتم ضغطها تلقائياً لتكون صغيرة.";
@@ -1581,14 +1597,12 @@ initHeaderToggle();
       selectedId = parent.children[parent.children.length - 1].id;
       render(true);
       closeModal(modalForm);
-      requestAnimationFrame(() => showDetails(selectedId));
     }else if(formMode === "addParentRoot"){
       const oldRoot = state;
       state = U.normalizeTree({ id: U.uid(), name, title, desc, photo, cardColor, birthDate, deathDate, children: [oldRoot] });
       selectedId = state.id;
       render(true);
       closeModal(modalForm);
-      requestAnimationFrame(() => showDetails(selectedId));
     }else{
       const cur = U.findById(state, selectedId);
       if(cur && cur.devSigned && !isAdmin()){
@@ -1599,7 +1613,6 @@ initHeaderToggle();
       if(!ok){ toastError("تعذر التعديل"); return; }
       render(true);
       closeModal(modalForm);
-      requestAnimationFrame(() => showDetails(selectedId));
     }
   });
 

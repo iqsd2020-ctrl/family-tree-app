@@ -1,5 +1,5 @@
 /* Service Worker - شجرة السادة اليعقوبيين */
-const CACHE_NAME = 'family-tree-app-cache-v9';
+const CACHE_NAME = 'family-tree-app-cache-v11';
 
 const PRECACHE_URLS = [
   './',

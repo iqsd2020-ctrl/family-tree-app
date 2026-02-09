@@ -387,13 +387,22 @@ body.header-collapsed .header-search{
   border-color: rgba(255,255,255,0.55);
 }
 
-.card.color-yellow{ background:#FFD54F; }
-.card.color-orange{ background:#FF9800; }
-.card.color-light-pink{ background:#F8BBD0; }
+.card.color-black{
+  background: #111;
+  border-color: rgba(17,17,17,0.95);
+}
+.card.color-black .name{ color:#fff; }
+.card.color-black .title,
+.card.color-black .dates{ color: rgba(255,255,255,0.85); }
+.card.color-black .avatar.placeholder{
+  color:#fff;
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.55);
+}
 
-.card.color-yellow,
-.card.color-orange,
-.card.color-light-pink{
+.card.color-gray{ background:#D1D5DB; }
+
+.card.color-gray{
   border-color: rgba(20,61,34,0.22);
 }
 
@@ -773,7 +782,20 @@ body.header-collapsed .header-search{
 .form-input:focus{
   box-shadow: 0 0 0 3px rgba(205,164,94,0.25);
 }
-
+.file-input-wrap{
+  position:relative;
+}
+.file-placeholder{
+  position:absolute;
+  top:50%;
+  right:12px;
+  transform:translateY(-50%);
+  color:#777;
+  pointer-events:none;
+}
+.file-input-wrap.has-file .file-placeholder{
+  display:none;
+}
 textarea.form-input{
   resize: vertical;
   min-height: 96px;
